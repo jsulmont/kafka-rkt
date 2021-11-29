@@ -391,13 +391,16 @@
    [elems _rd-kafka-topic-partition-pointer]))
 
 (define-rdkafka rd-kafka-commit
-  (_fun _rd-kafka-pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-pointer
+        -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-topic-partition-list-destroy
-  (_fun _rd-kafka-topic-partition-list-pointer -> _void))
+  (_fun _rd-kafka-topic-partition-list-pointer
+        -> _void))
 
 (define-rdkafka rd-kafka-topic-partition-list-new
-  (_fun _int -> _rd-kafka-topic-partition-list-pointer))
+  (_fun _int
+        -> _rd-kafka-topic-partition-list-pointer))
 
 (define-rdkafka rd-kafka-topic-partition-list-add
   (_fun _rd-kafka-topic-partition-list-pointer
@@ -481,3 +484,88 @@
 
 (provide
  rd-kafka-topic-name)
+
+
+
+;;; ---------------------------------
+;;; @name Metadata API
+;;; ---------------------------------
+
+(define-cstruct _rd-kafka-metadata-broker
+  ([id _int32]
+   [host _string]
+   [port _int]))
+
+(define-cstruct _rd-kafka-metadata-partition
+  ([id _int32]
+   [err _rd-kafka-resp-err]
+   [leader _int32]
+   [replica-cnt _int]
+   [replicas _pointer]
+   [isr-cnt _int]
+   [isrs _pointer]))
+
+(define-cstruct _rd-kafka-metadata-topic
+  ([topic _string]
+   [partition-cnt _int]
+   [partitions _rd-kafka-metadata-partition-pointer]
+   [err _rd-kafka-resp-err]))
+
+(define-cstruct _rd-kafka-metadata
+  ([broker-cnt _int]
+   [brokers _rd-kafka-metadata-broker-pointer]
+   [topic-cnt _int]
+   [topics _rd-kafka-metadata-topic-pointer]
+   [origin-broker-id _int32]
+   [origin-broker-name _string]))
+
+(provide
+ _rd-kafka-metadata-broker
+ (struct-out rd-kafka-metadata-broker)
+ _rd-kafka-metadata-partition
+ (struct-out rd-kafka-metadata-partition)
+ _rd-kafka-metadata-topic
+ (struct-out rd-kafka-metadata-topic)
+ _rd-kafka-metadata
+ (struct-out rd-kafka-metadata))
+
+;;; ---------------------------------
+;;; @name Group interface
+;;; ---------------------------------
+
+(define-cstruct _rd-kafka-group-member-info
+  ([member-id _string]
+   [client-id _string]
+   [client-host _string]
+   [member-metadata _bytes]
+   [member-metadata-size _size]
+   [member-assignment _bytes]
+   [member-assignment-size _size]))
+
+(define-cstruct _rd-kafka-group-info
+  ([member-id _string]
+   [client-id _string]
+   [client-host _string]
+   [member-metadata _bytes]
+   [member-metadata-size _size]
+   [member-assignment _bytes]
+   [member-assignment-size _size]))
+
+(define-cstruct _rd-kafka-group-list
+  ([groups _rd-kafka-group-info-pointer]
+   [group-cnt _int]))
+
+(provide
+ _rd-kafka-group-member-info
+ (struct-out rd-kafka-group-member-info)
+ _rd-kafka-group-info
+ (struct-out rd-kafka-group-info)
+ _rd-kafka-group-list
+ (struct-out rd-kafka-group-list))
+
+(define-rdkafka rd-kafka-list-groups
+  (_fun _rd-kafka-pointer
+        _string
+        (g : (_ptr o _rd-kafka-group-list-pointer))
+        -> (e : _rd-kafka-resp-err)
+        -> (values g e)))
