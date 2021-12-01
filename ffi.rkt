@@ -483,18 +483,12 @@
    [group-cnt _int]))
 
 (define-rdkafka rd-kafka-list-groups
-  (_fun _rd-kafka-pointer _string
-        (g : (_ptr o _pointer))
-        _int
+  (_fun _rd-kafka-pointer _string (g : (_ptr o _pointer)) _int
         -> (e : _rd-kafka-resp-err)
-        -> (let* ([group-list (ptr-ref g _rd-kafka-group-list)]
-                  [len (rd-kafka-group-list-group-cnt group-list)]
-                  [groups (cblock->list (rd-kafka-group-list-groups group-list) _rd-kafka-group-info len)])
-             (values e groups))))
+        -> (values e g)))
 
 (define-rdkafka rd-kafka-group-list-destroy
-  (_fun _rd-kafka-group-list-pointer
-        -> _void))
+  (_fun _pointer -> _void))
 
 (provide
  _rd-kafka-group-member-info

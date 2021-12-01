@@ -7,7 +7,7 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-q" "-A" "-X" "bootstrap.servers=localhost:9092" "transactions:0")
+      (vector "-q" "-D" "-A" "-X" "bootstrap.servers=localhost:9092" "transactions:0")
       (current-command-line-arguments)))
 
 (define consumer-group (make-parameter "rdkafka-consumer-example"))
@@ -61,45 +61,13 @@
     conf))
 
 (define (make-consumer conf errstr errstr-len)
-  (let ([producer (rd-kafka-new 'RD_KAFKA_CONSUMER conf errstr errstr-len)])
-    (when (ptr-equal? producer #f)
+  (let ([consumer (rd-kafka-new 'RD_KAFKA_CONSUMER conf errstr errstr-len)])
+    (when (ptr-equal? consumer #f)
       (rd-kafka-conf-destroy conf)
       (raise (bytes->string errstr)))
-    producer))
+    (rd-kafka-poll-set-consumer consumer)
+    consumer))
 
-
-(define (format-broker broker)
-  (format "%% broker: id=~a host=~a port=~a"
-          (rd-kafka-metadata-broker-id broker)
-          (rd-kafka-metadata-broker-host broker)
-          (rd-kafka-metadata-broker-port broker)))
-
-(define (format-group-info group-info)
-  (displayln (rd-kafka-group-info? group-info))
-  (displayln (rd-kafka-group-info-group group-info))
-  (displayln (~> (rd-kafka-group-info-broker group-info) (rd-kafka-metadata-broker-host)))
-  #;(let* ([broker (rd-kafka-group-info-broker group-info)]
-           [group (rd-kafka-group-info-group group-info)]
-           [err (rd-kafka-group-info-err group-info)]
-           [state (rd-kafka-group-info-state group-info)]
-           [proto-type (rd-kafka-group-info-proto-type group-info)]
-           [protocol (rd-kafka-group-info-protocol group-info)]
-           [members (rd-kafka-group-info-members group-info)]
-           [member-cnt (rd-kafka-group-info-member-cnt group-info)])
-    (displayln (format
-                "%% group-info: \n\tgroup=~a\n\tbroker=~a\n\terr=~a\n\tstate=~a\n\tprotocol-type=~a\n\tprotocol=~a\n\t#members=~a\n"
-                group broker err state proto-type protocol member-cnt))))
-
-(define (describe-groups client group timeout)
-  (let-values ([(err group-list) (rd-kafka-list-groups client group timeout)])
-    (unless (eq? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
-      (raise (format "%% failed to acquire group list: ~a" (rd-kafka-err2str err))))
-
-    (displayln (format "err=~a group-list=~a cnt=~a" err group-list (rd-kafka-group-list-group-cnt group-list)))
-
-    (for ([i (in-range (rd-kafka-group-list-group-cnt group-list))])
-      (format-group-info (ptr-ref group-list _rd-kafka-group-info i)))
-    (rd-kafka-group-list-destroy group-list)))
 
 (define (parse-properties prop-strs result)
   (foldl
@@ -125,11 +93,48 @@
             (loop (cddr l) (cons (cons (car l) (cadr l)) result))))
       lst))
 
+
+(define (format-broker broker)
+  (format "broker ~a (~a:~a)"
+          (rd-kafka-metadata-broker-id broker)
+          (rd-kafka-metadata-broker-host broker)
+          (rd-kafka-metadata-broker-port broker)))
+
+(define (describe-groups client group)
+  (let-values ([(err g) (rd-kafka-list-groups client #f 10000)])
+    (unless (eq? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
+      (raise (format "%% failed to acquire group list: ~a" (rd-kafka-err2str err))))
+    (let* ([group-list* (ptr-ref g _rd-kafka-group-list)]
+           [len (rd-kafka-group-list-group-cnt group-list*)]
+           [group-list (cblock->list (rd-kafka-group-list-groups group-list*) _rd-kafka-group-info len)])
+      (for ([group-info group-list])
+        (let* ([broker (rd-kafka-group-info-broker group-info)]
+               [group (rd-kafka-group-info-group group-info)]
+               [err (rd-kafka-group-info-err group-info)]
+               [state (rd-kafka-group-info-state group-info)]
+               [proto-type (rd-kafka-group-info-proto-type group-info)]
+               [protocol (rd-kafka-group-info-protocol group-info)]
+               [members-cnt (rd-kafka-group-info-member-cnt group-info)]
+               [members-ptr (rd-kafka-group-info-members group-info)]
+               [members (cblock->list members-ptr _rd-kafka-group-member-info members-cnt)])
+          (displayln (format "Group ~s in state ~a on broker ~a" group state (format-broker broker)))
+          (when err (displayln (format " Error: " (rd-kafka-err2str err))) )
+          (displayln (format " Protocol type ~s, protocol ~s, with ~a member(s):"
+                             proto-type protocol members-cnt))
+          (for ([member members])
+            (~> (format " ~s, client-id ~s on host /~a\n    metadata: ~a bytes\n    assignment: ~a bytes"
+                        (rd-kafka-group-member-info-member-id member)
+                        (rd-kafka-group-member-info-client-id member)
+                        (rd-kafka-group-member-info-client-host member)
+                        (rd-kafka-group-member-info-member-metadata-size member)
+                        (rd-kafka-group-member-info-member-assignment-size member))
+                (displayln))))))
+    (rd-kafka-group-list-destroy g)))
+
 (try
  (let* ([errstr-len 256]
         [errstr (make-bytes errstr-len)]
-        [table
-         (~> #hash() (dict-set "bootstrap.servers" (brokers)) (dict-set "group.id" (consumer-group)))]
+        [table  (~> #hash() (dict-set "bootstrap.servers" (brokers)) (dict-set "group.id" (consumer-group)))]
         [table (if (null? (debug-flags))
                    table
                    (dict-set table "debug" (foldl string-append "" (add-between (debug-flags) ","))))]
@@ -143,36 +148,9 @@
 
    (when (describe-group)
      (describe-groups client (consumer-group))
-     (exit)))
+     #;(exit)))
+
  (catch (string? e) (displayln (format "%% string ~a" e))))
-
-(begin
-  (define errstr (make-bytes 256))
-  (define table
-    (~> #hash() (dict-set "bootstrap.servers" (brokers)) (dict-set "group.id" (consumer-group))))
-  (define conf (make-conf table errstr 256))
-  (define client (make-consumer conf errstr 256))
-
-  (let-values ([(err group-list) (rd-kafka-list-groups client #f 10000)])
-    (unless (eq? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
-      (raise (format "%% failed to acquire group list: ~a" (rd-kafka-err2str err))))
-
-    (displayln (format "group-list=~a\nerr=~a" group-list err))
-
-    (let* ([g0 (third group-list)]
-           [b0 (rd-kafka-group-info-broker g0)]
-           )
-
-      (displayln (rd-kafka-group-info? g0))
-      (displayln (rd-kafka-metadata-broker? b0))
-      (displayln (rd-kafka-metadata-broker-host b0))
-      (displayln (rd-kafka-metadata-broker-port b0))
-
-      )
-
-    #;(rd-kafka-group-list-destroy group-list-ptr))
-
-  )
 
 (when (verbose)
   (begin
