@@ -1,13 +1,13 @@
 #lang racket/base
 
-(require racket/list
-         racket/match
-         threading
-         setup/dirs
-         ffi/unsafe
-         ;         ffi/unsafe/alloc
-         ffi/unsafe/define
-         ffi/unsafe/define/conventions)
+(require
+ racket/list
+ racket/match
+ threading
+ setup/dirs
+ ffi/unsafe
+ ffi/unsafe/define
+ ffi/unsafe/define/conventions)
 
 (define rdkafka-lib
   (ffi-lib "librdkafka"
@@ -29,9 +29,10 @@
 
 (define-rdkafka rd-kafka-version-str (_fun -> _string))
 
-(provide RD_KAFKA_VERSION
-         rd-kafka-version
-         rd-kafka-version-str)
+(provide
+ RD_KAFKA_VERSION
+ rd-kafka-version
+ rd-kafka-version-str)
 
 ;;; ---------------------------------
 ;;; @name Constants, errors, types
@@ -40,8 +41,10 @@
 (define _rd-kafka-type (_enum '(RD_KAFKA_PRODUCER RD_KAFKA_CONSUMER)))
 
 (define _rd-kafka-timestamp-type
-  (_enum '(RD_KAFKA_TIMESTAMP_NOT_AVAILABLE RD_KAFKA_TIMESTAMP_CREATE_TIME
-                                            RD_KAFKA_TIMESTAMP_LOG_APPEND_TIME)))
+  (_enum
+   '(RD_KAFKA_TIMESTAMP_NOT_AVAILABLE
+     RD_KAFKA_TIMESTAMP_CREATE_TIME
+     RD_KAFKA_TIMESTAMP_LOG_APPEND_TIME)))
 
 ;;; bunch of opaque types
 (define _rd-kafka-pointer (_cpointer 'rd-kafka))
@@ -100,30 +103,32 @@
 
 (define-rdkafka rd-kafka-error-txn-requires-abort (_fun _rd-kafka-error-pointer -> _stdbool))
 
-(provide rd-kafka-err2str
-         rd-kafka-err2name
-         rd-kafka-last-error
-         rd-kafka-fatal-error
-         rd-kafka-error-code
-         rd-kafka-error-name
-         rd-kafka-error-string
-         rd-kafka-error-is-fatal
-         rd-kafka-error-is-retriable
-         rd-kafka-error-txn-requires-abort)
+(provide
+ rd-kafka-err2str
+ rd-kafka-err2name
+ rd-kafka-last-error
+ rd-kafka-fatal-error
+ rd-kafka-error-code
+ rd-kafka-error-name
+ rd-kafka-error-string
+ rd-kafka-error-is-fatal
+ rd-kafka-error-is-retriable
+ rd-kafka-error-txn-requires-abort)
 
 ;;; ---------------------------------
 ;;; @name Kafka messages
 ;;; ---------------------------------
 
 (define-cstruct _rd-kafka-message
-                ([err _rd-kafka-resp-err] [rkt _rd-kafka-topic-pointer]
-                                          [partition _int32]
-                                          [payload _pointer]
-                                          [len _size]
-                                          [key _pointer]
-                                          [key_len _size]
-                                          [offset _int64]
-                                          (private _pointer)))
+  ([err _rd-kafka-resp-err]
+   [rkt _rd-kafka-topic-pointer]
+   [partition _int32]
+   [payload _pointer]
+   [len _size]
+   [key _pointer]
+   [key_len _size]
+   [offset _int64]
+   (private _pointer)))
 
 (define-rdkafka rd-kafka-message-destroy (_fun _rd-kafka-message-pointer -> _void))
 
@@ -136,27 +141,32 @@
 (define-rdkafka rd-kafka-message-broker-id (_fun _rd-kafka-message-pointer -> _int32))
 
 (define-rdkafka rd-kafka-message-headers
-                (_fun _rd-kafka-message-pointer _pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-message-pointer _pointer
+        -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-message-detach-headers
-                (_fun _rd-kafka-message-pointer _pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-message-pointer _pointer
+        -> _rd-kafka-resp-err))
 
 (define _rd-kafka-msg-status
-  (_enum '(RD_KAFKA_MSG_STATUS_NOT_PERSISTED RD_KAFKA_MSG_STATUS_POSSIBLY_PERSISTED
-                                             RD_KAFKA_MSG_STATUS_PERSISTED)))
+  (_enum
+   '(RD_KAFKA_MSG_STATUS_NOT_PERSISTED
+     RD_KAFKA_MSG_STATUS_POSSIBLY_PERSISTED
+     RD_KAFKA_MSG_STATUS_PERSISTED)))
 
 (define-rdkafka rd-kafka-message-status (_fun _rd-kafka-message-pointer -> _rd-kafka-msg-status))
 
-(provide _rd-kafka-message
-         (struct-out rd-kafka-message)
-         rd-kafka-message-destroy
-         rd-kafka-message-errstr
-         rd-kafka-message-timestamp
-         rd-kafka-message-latency
-         rd-kafka-message-broker-id
-         rd-kafka-message-headers
-         rd-kafka-message-detach-headers
-         rd-kafka-message-status)
+(provide
+ _rd-kafka-message
+ (struct-out rd-kafka-message)
+ rd-kafka-message-destroy
+ rd-kafka-message-errstr
+ rd-kafka-message-timestamp
+ rd-kafka-message-latency
+ rd-kafka-message-broker-id
+ rd-kafka-message-headers
+ rd-kafka-message-detach-headers
+ rd-kafka-message-status)
 
 ;;; ---------------------------------
 ;;; @name configuration interface
@@ -168,7 +178,8 @@
 (define-rdkafka rd-kafka-conf-new (_fun -> _rd-kafka-conf-pointer))
 
 (define _rd-kafka-conf-res
-  (_enum '(RD_KAFKA_CONF_UNKNOWN = -2 RD_KAFKA_CONF_INVALID = -1 RD_KAFKA_CONF_OK = 0) _fixint))
+  (_enum
+   '(RD_KAFKA_CONF_UNKNOWN = -2 RD_KAFKA_CONF_INVALID = -1 RD_KAFKA_CONF_OK = 0) _fixint))
 
 (define-rdkafka rd-kafka-conf-properties-show (_fun _pointer -> _void))
 
@@ -251,9 +262,9 @@
 (define RD-KAFKA-MESG-F-BLOCK #x4)
 (define RD-KAFKA-MESG-F-PARTITION #x8)
 
-(define-rdkafka
- rd-kafka-produce
- (_fun _rd-kafka-pointer _int32 _int _pointer _size _pointer _size _pointer -> _rd-kafka-resp-err))
+(define-rdkafka rd-kafka-produce
+  (_fun _rd-kafka-pointer _int32 _int _pointer _size _pointer _size _pointer
+        -> _rd-kafka-resp-err))
 
 (define rd-kafka-vtypes
   '(rd-kafka-vtype-end
@@ -494,5 +505,3 @@
  (struct-out rd-kafka-group-list)
  rd-kafka-list-groups
  rd-kafka-group-list-destroy)
-
-(define x 0)
