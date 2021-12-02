@@ -6,6 +6,7 @@
  threading
  setup/dirs
  ffi/unsafe
+ ffi/unsafe/alloc
  ffi/unsafe/define
  ffi/unsafe/define/conventions)
 
@@ -126,7 +127,7 @@
    [payload _pointer]
    [len _size]
    [key _pointer]
-   [key_len _size]
+   [key-len _size]
    [offset _int64]
    (private _pointer)))
 
@@ -173,9 +174,13 @@
 ;;; ---------------------------------
 
 ;; TODO check wrap for both next
-(define-rdkafka rd-kafka-conf-destroy (_fun _rd-kafka-conf-pointer -> _void))
+(define-rdkafka rd-kafka-conf-destroy
+  (_fun _rd-kafka-conf-pointer -> _void)
+  #:wrap (deallocator))
 
-(define-rdkafka rd-kafka-conf-new (_fun -> _rd-kafka-conf-pointer))
+(define-rdkafka rd-kafka-conf-new
+  (_fun -> _rd-kafka-conf-pointer)
+  #:wrap (allocator rd-kafka-conf-destroy))
 
 (define _rd-kafka-conf-res
   (_enum
@@ -228,7 +233,6 @@
 (provide
  rd-kafka-conf-properties-show
  rd-kafka-get-debug-contexts
- rd-kafka-conf-destroy
  rd-kafka-conf-set
  rd-kafka-conf-new
  rd-kafka-conf-dup
@@ -247,15 +251,17 @@
 ;;; @name Kafka main object
 ;;; ---------------------------------
 
-(define-rdkafka
-  rd-kafka-destroy (_fun _rd-kafka-pointer -> _void))
+(define-rdkafka rd-kafka-destroy
+  (_fun _rd-kafka-pointer -> _void)
+  #:wrap (deallocator))
 
 (define-rdkafka rd-kafka-new
-  (_fun _rd-kafka-type _rd-kafka-conf-pointer _bytes _size -> _rd-kafka-pointer))
+  (_fun _rd-kafka-type _rd-kafka-conf-pointer _bytes _size
+        -> _rd-kafka-pointer)
+  #:wrap (allocator rd-kafka-destroy))
 
 (provide
- rd-kafka-new
- rd-kafka-destroy)
+ rd-kafka-new)
 
 (define RD-KAFKA-MESG-F-FREE #x1)
 (define RD-KAFKA-MESG-F-COPY #x2)
@@ -349,10 +355,12 @@
   (_fun _rd-kafka-pointer -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-topic-partition-list-destroy
-  (_fun _rd-kafka-topic-partition-list-pointer -> _void))
+  (_fun _rd-kafka-topic-partition-list-pointer -> _void)
+  #:wrap (deallocator))
 
 (define-rdkafka rd-kafka-topic-partition-list-new
-  (_fun _int -> _rd-kafka-topic-partition-list-pointer))
+  (_fun _int -> _rd-kafka-topic-partition-list-pointer)
+  #:wrap (allocator  rd-kafka-topic-partition-list-destroy))
 
 (define-rdkafka rd-kafka-topic-partition-list-add
   (_fun _rd-kafka-topic-partition-list-pointer _string _int32 -> _rd-kafka-topic-partition-pointer))
@@ -378,7 +386,6 @@
  _rd-kafka-topic-partition-list
  (struct-out rd-kafka-topic-partition-list)
  rd-kafka-commit
- rd-kafka-topic-partition-list-destroy
  rd-kafka-topic-partition-list-new
  rd-kafka-topic-partition-list-add
  rd-kafka-topic-partition-list-add-range
