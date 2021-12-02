@@ -7,12 +7,11 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-q" "-D" "-A" "-X" "bootstrap.servers=localhost:9092" "transactions:0")
+      (vector "-A" "-X" "bootstrap.servers=localhost:9092" "transactions:0")
       (current-command-line-arguments)))
 
 (define consumer-group (make-parameter "rdkafka-consumer-example"))
 (define brokers (make-parameter "localhost:9092"))
-(define exit-eof (make-parameter #f))
 (define verbose (make-parameter #t))
 (define describe-group (make-parameter #f))
 (define committed-offsets (make-parameter #f))
@@ -20,6 +19,10 @@
 (define properties (make-parameter (list)))
 (define debug-flags (make-parameter (list)))
 (define dump-conf (make-parameter #f))
+(define subscription? (make-parameter #t))
+(define exit-eof (make-parameter #f))
+(define wait-eof 0)
+(define running 1)
 
 (define topic-list
   (command-line
@@ -49,7 +52,6 @@
 (define (set-conf conf key value errstr errstr-len)
   (let ([res (rd-kafka-conf-set conf key value errstr errstr-len)])
     (unless (eq? res 'RD_KAFKA_CONF_OK)
-      (rd-kafka-conf-destroy conf)
       (raise (bytes->string errstr)))))
 
 (define (make-conf table errstr errstr-len)
@@ -63,11 +65,9 @@
 (define (make-consumer conf errstr errstr-len)
   (let ([consumer (rd-kafka-new 'RD_KAFKA_CONSUMER conf errstr errstr-len)])
     (when (ptr-equal? consumer #f)
-      (rd-kafka-conf-destroy conf)
       (raise (bytes->string errstr)))
     (rd-kafka-poll-set-consumer consumer)
     consumer))
-
 
 (define (parse-properties prop-strs result)
   (foldl
@@ -93,7 +93,6 @@
             (loop (cddr l) (cons (cons (car l) (cadr l)) result))))
       lst))
 
-
 (define (format-broker broker)
   (format "broker ~a (~a:~a)"
           (rd-kafka-metadata-broker-id broker)
@@ -118,7 +117,7 @@
                [members-ptr (rd-kafka-group-info-members group-info)]
                [members (cblock->list members-ptr _rd-kafka-group-member-info members-cnt)])
           (displayln (format "Group ~s in state ~a on broker ~a" group state (format-broker broker)))
-          (when err (displayln (format " Error: " (rd-kafka-err2str err))) )
+          (when err (displayln (format " Error: ~a" (rd-kafka-err2str err))) )
           (displayln (format " Protocol type ~s, protocol ~s, with ~a member(s):"
                              proto-type protocol members-cnt))
           (for ([member members])
@@ -130,6 +129,56 @@
                         (rd-kafka-group-member-info-member-assignment-size member))
                 (displayln))))))
     (rd-kafka-group-list-destroy g)))
+
+
+(define (make-partition-list lst)
+  (let ([topics (rd-kafka-topic-partition-list-new (length lst))])
+    (println topics)
+    (for ([topic lst])
+      (let* ([seq (string-split topic ":")]
+             [partition  (match (length seq)
+                           [2 (begin (subscription? #f) (string->number (cadr seq)))]
+                           [1 -1] [_ (raise (format "invalid topic list: " lst))])])
+        (rd-kafka-topic-partition-list-add topics (car seq) partition)))
+    topics))
+
+(define (message-consume msg)
+  (let* ([err (rd-kafka-message-err msg)]
+         [topic (rd-kafka-message-rkt msg)]
+         [topic-name (rd-kafka-topic-name topic)]
+         [offset (rd-kafka-message-offset msg)]
+         [partition (rd-kafka-message-partition msg)])
+
+    (if err
+        (if (equal? err 'RD_KAFKA_RESP_ERR__PARTITION_EOF)
+            (begin
+              (displayln
+               (format "%% Consumer reached end of ~a [~a] message queue at offset ~a"
+                       topic-name partition offset))
+              (when (exit-eof)
+                (set! wait-eof (sub1 wait-eof))
+                (when (zero? wait-eof)
+                  (displayln "%% All partition(s) reached EOF: exiting")
+                  (set! running 0))))
+            (begin
+              (if (not (ptr-equal? topic #f))
+                  (display
+                   (format "%% Consume error for topic ~s [~a] offset ~a: ~a"
+                           topic-name partition offset
+                           (rd-kafka-message-errstr msg)))
+                  (display
+                   (format "%% Consumer error: ~a: ~a"
+                           (rd-kafka-err2str err)
+                           (rd-kafka-message-errstr msg))))))
+        (let ([key-len (rd-kafka-message-key-len msg)]
+              [len (rd-kafka-message-len msg)])
+          (when (verbose)
+            (displayln
+             (format "%% Message (topic ~s [~a] offset %a, ~a bytes)"
+                     topic-name partition offset (rd-kafka-message-len msg))))
+          (when (positive? key-len)
+            (displayln (format "Key: ~a" (rd-kafka-message-key msg))))
+          (displayln (format "~a"))))) )
 
 (try
  (let* ([errstr-len 256]
@@ -148,12 +197,16 @@
 
    (when (describe-group)
      (describe-groups client (consumer-group))
-     #;(exit)))
+     (exit))
+
+
+
+   )
 
  (catch (string? e) (displayln (format "%% string ~a" e))))
 
-(when (verbose)
-  (begin
+#;(when (verbose)
+    (begin
     (displayln "%% Running arguments:")
     (displayln (format "%%\tconsumer-group = ~a" (consumer-group)))
     (displayln (format "%%\tbrokers = ~a" (brokers)))
