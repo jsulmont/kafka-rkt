@@ -7,7 +7,7 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-A" "-D" "-X" "bootstrap.servers=localhost:9092" "transactions:0")
+      (vector "-A" "-X" "bootstrap.servers=localhost:9092" "transactions")
       (current-command-line-arguments)))
 
 (define consumer-group (make-parameter "rdkafka-consumer-example"))
@@ -107,7 +107,6 @@
     (let* ([group-list* (ptr-ref g _rd-kafka-group-list)]
            [len (rd-kafka-group-list-group-cnt group-list*)]
            [group-list (cblock->list (rd-kafka-group-list-groups group-list*) _rd-kafka-group-info len)])
-      (displayln (format "XXXXX ~a ~a" len group-list))
       (for ([group-info group-list])
         (let* ([broker (rd-kafka-group-info-broker group-info)]
                [group (rd-kafka-group-info-group group-info)]
@@ -133,6 +132,56 @@
                 (displayln))))))))
     (rd-kafka-group-list-destroy g)))
 
+(define (format-partition-list partitions)
+  (let* ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)]
+         [partition-elms (rd-kafka-topic-partition-list-elems partitions)]
+         [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
+    (for/list ([p partition-lst])
+      (format "~a [~a] offset ~a"
+              (rd-kafka-topic-partition-topic p)
+              (rd-kafka-topic-partition-partition p)
+              (rd-kafka-topic-partition-offset p)))))
+
+
+;;
+;; TODO no procedural
+(define (rebalance-cb client err partitions _)
+  (display "%% Consumer group rebalanced: ")
+  (let ([error #f]
+        [ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR])
+
+    (match err
+      ['RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS
+       (displayln (format "assigned (~a): ~s"
+                          (rd-kafka-rebalance-protocol client)
+                          (format-partition-list partitions)))
+       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
+           (set! error (rd-kafka-incremental-assign client partitions))
+           (set! ret-err (rd-kafka-assign client partitions)))
+       (set! wait-eof (+ wait-eof (rd-kafka-topic-partition-list-cnt partitions)))]
+
+      ['RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS
+       (displayln (format "revoked (~a): ~s"
+                          (rd-kafka-rebalance-protocol client)
+                          (format-partition-list partitions)))
+       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
+           (begin
+             (set! error (rd-kafka-incremental-unassign client partitions))
+             (set! wait-eof (- wait-eof (rd-kafka-topic-partition-list-cnt partitions))))
+           (begin
+             (set! ret-err (rd-kafka-assign client #f))
+             (set! wait-eof 0)))]
+
+      [_ (displayln "failed: ~a" (rd-kafka-err2str err))
+         (rd-kafka-assign client #f)])
+
+    (cond
+      [error
+       (begin
+         (displayln (format "incremental assign failure: ~a" (rd-kafka-error-string error)))
+         (rd-kafka-error-destroy error))]
+      [(not (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR))
+       (displayln (format "assign failure: ~a" (rd-kafka-err2str ret-err)))])))
 
 (define (make-partition-list lst)
   (let ([topics (rd-kafka-topic-partition-list-new (length lst))])
@@ -203,6 +252,7 @@
                    (dict-set table "debug" (foldl string-append "" (add-between (debug-flags) ","))))]
         [table (parse-properties (properties) table)]
         [conf (make-conf table errstr errstr-len)]
+        [_ (rd-kafka-conf-set-rebalance-cb conf rebalance-cb)]
         [client (make-consumer conf errstr errstr-len)])
 
    (when (dump-conf)

@@ -96,9 +96,14 @@
 
 (define-rdkafka rd-kafka-error-code (_fun _rd-kafka-error-pointer -> _rd-kafka-resp-err))
 
-(define-rdkafka rd-kafka-error-name (_fun _rd-kafka-error-pointer -> _string))
+(define-rdkafka rd-kafka-error-name
+  (_fun _rd-kafka-error-pointer -> _string))
 
-(define-rdkafka rd-kafka-error-string (_fun _rd-kafka-error-pointer -> _string))
+(define-rdkafka rd-kafka-error-string
+  (_fun _rd-kafka-error-pointer -> _string))
+
+(define-rdkafka rd-kafka-error-destroy
+  (_fun _rd-kafka-error-pointer -> _void))
 
 (define-rdkafka rd-kafka-error-is-fatal (_fun _rd-kafka-error-pointer -> _stdbool))
 
@@ -114,6 +119,7 @@
  rd-kafka-error-code
  rd-kafka-error-name
  rd-kafka-error-string
+ rd-kafka-error-destroy
  rd-kafka-error-is-fatal
  rd-kafka-error-is-retriable
  rd-kafka-error-txn-requires-abort)
@@ -186,6 +192,21 @@
   (_enum
    '(RD_KAFKA_CONF_UNKNOWN = -2 RD_KAFKA_CONF_INVALID = -1 RD_KAFKA_CONF_OK = 0) _fixint))
 
+(define-cstruct _rd-kafka-topic-partition
+  ([topic _string]
+   [partition _int32]
+   [offset _int64]
+   [metadata _pointer]
+   [metadata-size _size]
+   [opaque _size]
+   [err _rd-kafka-resp-err]
+   (private _pointer)))
+
+(define-cstruct _rd-kafka-topic-partition-list
+  ([cnt _int]
+   [size _int]
+   [elems _rd-kafka-topic-partition-pointer]))
+
 (define-rdkafka rd-kafka-conf-properties-show (_fun _pointer -> _void))
 
 (define-rdkafka rd-kafka-conf-set
@@ -197,11 +218,24 @@
 
 (define-rdkafka rd-kafka-conf-set-events (_fun _rd-kafka-conf-pointer _int -> _void))
 
-(define _dr-msg-cb (_fun _rd-kafka-pointer _rd-kafka-message-pointer _pointer -> _void))
+(define _dr-msg-cb
+  (_fun _rd-kafka-pointer _rd-kafka-message-pointer _pointer -> _void))
 
-(define-rdkafka rd-kafka-conf-set-dr-msg-cb (_fun _rd-kafka-conf-pointer _dr-msg-cb -> _void))
+(define _rebalance-cb
+  (_fun _rd-kafka-pointer _rd-kafka-resp-err
+        _rd-kafka-topic-partition-list-pointer
+        _pointer
+        -> _void))
 
-(define _background-event-cb (_fun _rd-kafka-pointer _rd-kafka-event-pointer _pointer -> _void))
+(define-rdkafka rd-kafka-conf-set-dr-msg-cb
+  (_fun _rd-kafka-conf-pointer _dr-msg-cb -> _void))
+
+(define-rdkafka rd-kafka-conf-set-rebalance-cb
+  (_fun _rd-kafka-conf-pointer _rebalance-cb
+        -> _void))
+
+(define _background-event-cb
+  (_fun _rd-kafka-pointer _rd-kafka-event-pointer _pointer -> _void))
 
 (define-rdkafka rd-kafka-conf-set-background-event-cb
   (_fun _rd-kafka-conf-pointer _background-event-cb -> _void))
@@ -239,8 +273,10 @@
  rd-kafka-conf
  rd-kafka-conf-set-events
  _dr-msg-cb
+ _rebalance-cb
  _background-event-cb
  rd-kafka-conf-set-dr-msg-cb
+ rd-kafka-conf-set-rebalance-cb
  rd-kafka-conf-set-background-event-cb
  rd-kafka-conf-dump
  rd-kafka-conf-destroy
@@ -336,22 +372,6 @@
  rd-kafka-poll
  rd-kafka-outq-len
  rd-kafka-flush)
-
-(define-cstruct _rd-kafka-topic-partition
-  ([topic _string]
-   [partition _int32]
-   [offset _int64]
-   [metadata _pointer]
-   [metadata-size _size]
-   [opaque _size]
-   [err _rd-kafka-resp-err]
-   (private _pointer)))
-
-(define-cstruct _rd-kafka-topic-partition-list
-  ([cnt _int]
-   [size _int]
-   [elems _rd-kafka-topic-partition-pointer]))
-
 (define-rdkafka rd-kafka-commit
   (_fun _rd-kafka-pointer -> _rd-kafka-resp-err))
 
@@ -400,7 +420,16 @@
 
 (define RD_KAFKA_PARTITION_UA -1)
 
+(define-rdkafka rd-kafka-rebalance-protocol
+  (_fun _rd-kafka-pointer -> _string))
+
 (define-rdkafka rd-kafka-assign
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
+
+(define-rdkafka rd-kafka-incremental-assign
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
+
+(define-rdkafka rd-kafka-incremental-unassign
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-subscribe
@@ -417,6 +446,9 @@
  RD_KAFKA_PARTITION_UA
  rd-kafka-subscribe
  rd-kafka-assign
+ rd-kafka-incremental-assign
+ rd-kafka-incremental-unassign
+ rd-kafka-rebalance-protocol
  rd-kafka-consumer-poll
  rd-kafka-consumer-close)
 
