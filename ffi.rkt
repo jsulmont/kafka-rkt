@@ -11,15 +11,16 @@
  ffi/unsafe/define/conventions)
 
 (define rdkafka-lib
-  (ffi-lib "librdkafka"
-           '("1" #f)
+  (ffi-lib "librdkafka" '("1" #f)
            #:get-lib-dirs
            (λ ()
              (cons #;(string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
                    (string->path "/Users/jsulmont/dev/rdkafka")
                    (get-lib-search-dirs)))))
 
-(define-ffi-definer define-rdkafka rdkafka-lib #:make-c-id convention:hyphen->underscore)
+(define-ffi-definer define-rdkafka
+  rdkafka-lib
+  #:make-c-id convention:hyphen->underscore)
 
 ;;; ---------------------------------
 ;;; @name librdkafka version

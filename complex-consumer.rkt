@@ -7,7 +7,7 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-A" "-X" "bootstrap.servers=localhost:9092" "transactions:0")
+      (vector "-A" "-D" "-X" "bootstrap.servers=localhost:9092" "transactions:0")
       (current-command-line-arguments)))
 
 (define consumer-group (make-parameter "rdkafka-consumer-example"))
@@ -22,7 +22,7 @@
 (define subscription? (make-parameter #t))
 (define exit-eof (make-parameter #f))
 (define wait-eof 0)
-(define running 1)
+(define running #t)
 
 (define topic-list
   (command-line
@@ -107,6 +107,7 @@
     (let* ([group-list* (ptr-ref g _rd-kafka-group-list)]
            [len (rd-kafka-group-list-group-cnt group-list*)]
            [group-list (cblock->list (rd-kafka-group-list-groups group-list*) _rd-kafka-group-info len)])
+      (displayln (format "XXXXX ~a ~a" len group-list))
       (for ([group-info group-list])
         (let* ([broker (rd-kafka-group-info-broker group-info)]
                [group (rd-kafka-group-info-group group-info)]
@@ -114,31 +115,33 @@
                [state (rd-kafka-group-info-state group-info)]
                [proto-type (rd-kafka-group-info-proto-type group-info)]
                [protocol (rd-kafka-group-info-protocol group-info)]
-               [members-cnt (rd-kafka-group-info-member-cnt group-info)]
-               [members-ptr (rd-kafka-group-info-members group-info)]
-               [members (cblock->list members-ptr _rd-kafka-group-member-info members-cnt)])
-          (displayln (format "Group ~s in state ~a on broker ~a" group state (format-broker broker)))
+               [members-cnt (rd-kafka-group-info-member-cnt group-info)])
+          (displayln (format "\nGroup ~s in state ~a on broker ~a" group state (format-broker broker)))
           (when err (displayln (format " Error: ~a" (rd-kafka-err2str err))) )
           (displayln (format " Protocol type ~s, protocol ~s, with ~a member(s):"
                              proto-type protocol members-cnt))
-          (for ([member members])
-            (~> (format " ~s, client-id ~s on host /~a\n    metadata: ~a bytes\n    assignment: ~a bytes"
+          (when (positive? members-cnt)
+            (let* ([members-ptr (rd-kafka-group-info-members group-info)]
+                   [members (cblock->list members-ptr _rd-kafka-group-member-info members-cnt)])
+              (for ([member members])
+                (~> (format " ~s, client-id ~s on host /~a\n    metadata: ~a bytes\n    assignment: ~a bytes"
                         (rd-kafka-group-member-info-member-id member)
                         (rd-kafka-group-member-info-client-id member)
                         (rd-kafka-group-member-info-client-host member)
                         (rd-kafka-group-member-info-member-metadata-size member)
                         (rd-kafka-group-member-info-member-assignment-size member))
-                (displayln))))))
+                (displayln))))))))
     (rd-kafka-group-list-destroy g)))
 
 
 (define (make-partition-list lst)
   (let ([topics (rd-kafka-topic-partition-list-new (length lst))])
-    (println topics)
     (for ([topic lst])
       (let* ([seq (string-split topic ":")]
              [partition  (match (length seq)
-                           [2 (begin (subscription? #f) (string->number (cadr seq)))]
+                           [2 (begin (subscription? #f)
+                                     (set! wait-eof (add1 wait-eof))
+                                     (string->number (cadr seq)))]
                            [1 -1] [_ (raise (format "invalid topic list: " lst))])])
         (rd-kafka-topic-partition-list-add topics (car seq) partition)))
     topics))
@@ -149,21 +152,22 @@
          [topic-name (rd-kafka-topic-name topic)]
          [offset (rd-kafka-message-offset msg)]
          [partition (rd-kafka-message-partition msg)])
+
     (case err
       ['RD_KAFKA_RESP_ERR_NO_ERROR
        (let ([key-len (rd-kafka-message-key-len msg)]
              [len (rd-kafka-message-len msg)])
          (when (verbose)
-           (displayln
-            (format "%% Message (topic ~s [~a] offset ~a, ~a bytes)"
-                    topic-name partition offset len)))
+           (displayln (format "%% Message (topic ~s [~a] offset ~a, ~a bytes)"
+                              topic-name partition offset len)))
          (when (positive? key-len)
-           (displayln (format "Key: ~a"
+           (displayln (format "Key: ~a" ;; TODO -A (hexdump)
                               (~> (rd-kafka-message-key msg)
                                   (bytes->string/latin-1 #f 0 key-len)))))
          (displayln (format "~a"
                             (~> (rd-kafka-message-payload msg)
                                 (bytes->string/latin-1 #f 0 len)))))]
+
       ['RD_KAFKA_RESP_ERR__PARTITION_EOF
        (begin
          (displayln
@@ -173,7 +177,8 @@
            (set! wait-eof (sub1 wait-eof))
            (when (zero? wait-eof)
              (displayln "%% All partition(s) reached EOF: exiting")
-             (set! running 0))))]
+             (set! running #f))))]
+
       [else
        (begin
          (if (not (ptr-equal? topic #f))
@@ -186,11 +191,11 @@
                       (rd-kafka-err2str err)
                       (rd-kafka-message-errstr msg)))))])))
 
-
 (try
  (let* ([errstr-len 256]
         [errstr (make-bytes errstr-len)]
         [table  (~> #hash()
+                    (dict-set "enable.partition.eof" "true")
                     (dict-set "bootstrap.servers" (brokers))
                     (dict-set "group.id" (consumer-group)))]
         [table (if (null? (debug-flags))
@@ -215,25 +220,27 @@
                               (rd-kafka-topic-partition-list-cnt topics)))
            (let ([err (rd-kafka-subscribe client topics)])
              (when (not (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR))
-               (display (format "%% Failed to start consuming topics: ~a")
-                        (rd-kafka-err2str err))
+               (displayln (format "%% Failed to start consuming topics: ~a")
+                          (rd-kafka-err2str err))
                (exit 1))))
          (begin
            (displayln (format "%% Assigning ~a partitions"
                               (rd-kafka-topic-partition-list-cnt topics)))
            (let ([err (rd-kafka-assign client topics)])
              (when (not (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR))
-               (display (format "%% Failed to start consuming topics: ~a")
-                        (rd-kafka-err2str err))
+               (displayln (format "%% Failed to start consuming topics: ~a")
+                          (rd-kafka-err2str err))
                (exit 1)))))
 
      (let loop ([msg (rd-kafka-consumer-poll client 1000)])
        (unless (ptr-equal? msg #f)
-         (message-consume msg))
-       (rd-kafka-message-destroy msg)
-       (when running (loop (rd-kafka-consumer-poll client 1000))))))
+         (message-consume msg)
+         (rd-kafka-message-destroy msg))
+       (when running
+         (loop (rd-kafka-consumer-poll client 1000))))))
 
- (catch (string? e) (displayln (format "%% string ~a" e))))
+ (catch
+     (string? e) (displayln (format "%% string ~a" e))))
 
 (when (verbose)
   (begin
