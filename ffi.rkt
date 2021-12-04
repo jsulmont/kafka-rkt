@@ -15,7 +15,8 @@
            '("1" #f)
            #:get-lib-dirs
            (λ ()
-             (cons (string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
+             (cons #;(string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
+                   (string->path "/Users/jsulmont/dev/rdkafka")
                    (get-lib-search-dirs)))))
 
 (define-ffi-definer define-rdkafka rdkafka-lib #:make-c-id convention:hyphen->underscore)
@@ -124,9 +125,9 @@
   ([err _rd-kafka-resp-err]
    [rkt _rd-kafka-topic-pointer]
    [partition _int32]
-   [payload _pointer]
+   [payload _bytes]
    [len _size]
-   [key _pointer]
+   [key _bytes]
    [key-len _size]
    [offset _int64]
    (private _pointer)))
@@ -173,14 +174,12 @@
 ;;; @name configuration interface
 ;;; ---------------------------------
 
-;; TODO check wrap for both next
+;; WARNING can't use #:wrap here (cf. rd-kafka-new)
 (define-rdkafka rd-kafka-conf-destroy
-  (_fun _rd-kafka-conf-pointer -> _void)
-  #:wrap (deallocator))
+  (_fun _rd-kafka-conf-pointer -> _void))
 
 (define-rdkafka rd-kafka-conf-new
-  (_fun -> _rd-kafka-conf-pointer)
-  #:wrap (allocator rd-kafka-conf-destroy))
+  (_fun -> _rd-kafka-conf-pointer))
 
 (define _rd-kafka-conf-res
   (_enum
@@ -189,7 +188,7 @@
 (define-rdkafka rd-kafka-conf-properties-show (_fun _pointer -> _void))
 
 (define-rdkafka rd-kafka-conf-set
-                (_fun _rd-kafka-conf-pointer _string _string _bytes _size -> _rd-kafka-conf-res))
+  (_fun _rd-kafka-conf-pointer _string _string _bytes _size -> _rd-kafka-conf-res))
 
 (define-rdkafka rd-kafka-conf-dup (_fun _rd-kafka-conf-pointer -> _rd-kafka-conf-pointer))
 
@@ -204,7 +203,7 @@
 (define _background-event-cb (_fun _rd-kafka-pointer _rd-kafka-event-pointer _pointer -> _void))
 
 (define-rdkafka rd-kafka-conf-set-background-event-cb
-                (_fun _rd-kafka-conf-pointer _background-event-cb -> _void))
+  (_fun _rd-kafka-conf-pointer _background-event-cb -> _void))
 
 (define-rdkafka rd-kafka-conf-dump-free (_fun [arr : _pointer] [cnt : _size] -> _void))
 
@@ -243,6 +242,7 @@
  rd-kafka-conf-set-dr-msg-cb
  rd-kafka-conf-set-background-event-cb
  rd-kafka-conf-dump
+ rd-kafka-conf-destroy
  rd-kafka-topic-conf-dump
  rd-kafka-conf-set-default-topic-conf
  rd-kafka-conf-get-default-topic-conf)
@@ -399,6 +399,9 @@
 
 (define RD_KAFKA_PARTITION_UA -1)
 
+(define-rdkafka rd-kafka-assign
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
+
 (define-rdkafka rd-kafka-subscribe
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
 
@@ -412,6 +415,7 @@
  rd-kafka-poll-set-consumer
  RD_KAFKA_PARTITION_UA
  rd-kafka-subscribe
+ rd-kafka-assign
  rd-kafka-consumer-poll
  rd-kafka-consumer-close)
 

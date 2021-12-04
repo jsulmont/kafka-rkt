@@ -17,8 +17,7 @@
 
 (define (set-conf conf key value errstr errstr-len)
   (let ([res (rd-kafka-conf-set conf key value errstr errstr-len)])
-    (unless (eq? res 'conf-ok)
-      (rd-kafka-conf-destroy conf)
+    (unless (eq? res 'RD_KAFKA_CONF_OK)
       (raise (bytes->string errstr)))))
 
 (define (make-conf pairs errstr errstr-len)
@@ -29,9 +28,8 @@
     conf))
 
 (define (make-consumer conf errstr errstr-len)
-  (let ([producer (rd-kafka-new 'consumer conf errstr errstr-len)])
+  (let ([producer (rd-kafka-new 'RD_KAFKA_CONSUMER conf errstr errstr-len)])
     (when (ptr-equal? producer #f)
-      (rd-kafka-conf-destroy conf)
       (raise (bytes->string errstr)))
     producer))
 
@@ -57,13 +55,14 @@
        [conf (make-conf pairs errstr errstr-len)]
        [consumer (make-consumer conf errstr errstr-len)])
 
-  (subscribe consumer "foobar" "stock-trades" "credit_cards")
+  (subscribe consumer "foobar" "stock-trades" "credit_cards" "transactions")
 
   (let loop ([ptr (rd-kafka-consumer-poll consumer 100)])
     (unless ptr
       (loop (rd-kafka-consumer-poll consumer 100)))
 
-    (let* ([msg (ptr-ref ptr _rd-kafka-message)] [err (rd-kafka-message-err msg)])
+    (let* ([msg (ptr-ref ptr _rd-kafka-message)]
+           [err (rd-kafka-message-err msg)])
 
       (unless (eq? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
         (displayln (format "%% Consumer error: ~a" (rd-kafka-err2str err)))
@@ -74,7 +73,7 @@
                              (rd-kafka-topic-name (rd-kafka-message-rkt msg))
                              (rd-kafka-message-partition msg)
                              (rd-kafka-message-offset msg))]
-             [key-len (rd-kafka-message-key_len msg)]
+             [key-len (rd-kafka-message-key-len msg)]
              [keystr (if (equal? key-len 0) "no key" (format "~a bytes key" key-len))]
              [len (rd-kafka-message-len msg)]
              [valstr (if (equal? len 0) "no value" (format "~a bytes value" len))])
