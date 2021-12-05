@@ -58,6 +58,7 @@
 (define _rd-kafka-event-pointer (_cpointer 'rd-kafka-event))
 (define _rd-kafka-topic-result-pointer (_cpointer 'rd-kafka-topic-result))
 (define _rd-kafka-consumer-group-metadata-pointer (_cpointer 'rd-kafka-consumer-group-metadata))
+(define _rd-kafka-error-pointer/null (_cpointer/null 'rd-kafka-error))
 (define _rd-kafka-error-pointer (_cpointer 'rd-kafka-error))
 (define _rd-kafka-headers-pointer (_cpointer 'rd-kafka-headers))
 (define _rd-kafka-group-result-pointer (_cpointer 'rd-kafka-group-result))
@@ -424,7 +425,7 @@
   (_fun _rd-kafka-pointer -> _string))
 
 (define-rdkafka rd-kafka-assign
-  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer/null -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-incremental-assign
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))

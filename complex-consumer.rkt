@@ -7,10 +7,10 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-A" "-X" "bootstrap.servers=localhost:9092" "transactions")
+      (vector "-A" "-g" "xoxo15" "transactions")
       (current-command-line-arguments)))
 
-(define consumer-group (make-parameter "rdkafka-consumer-example"))
+(define group-id (make-parameter #f))
 (define brokers (make-parameter "localhost:9092"))
 (define verbose (make-parameter #t))
 (define describe-group (make-parameter #f))
@@ -24,27 +24,7 @@
 (define wait-eof 0)
 (define running #t)
 
-(define topic-list
-  (command-line
-   #:program "complex-consumer"
-   #:argv argument-vec
-   #:once-each ["-g" g "Consumer group. ((null))" (consumer-group g)]
-   ["-q" "Be quiet." (verbose #f)]
-   ["-b" b "Broker address. (localhost:9092)" (brokers b)]
-   ["-e" "Exit consumer when last message ∈ partition has been received." (exit-eof #t)]
-   ["-D" "Describe group." (describe-group #t)]
-   ["-O" "Get committed offset(s)." (committed-offsets #t)]
-   ["-A" "Raw payload output (consumer)." (raw-output #t)]
-   #:multi
-   ["-d" flag "set debug flag (all,generic,broker,topic...)." (debug-flags (cons flag (debug-flags)))]
-   ["-X"
-    property
-    "Set arbitrary librdkafka configuration property (name=value)."
-    (properties (cons property (properties)))]
-   #:usage-help "For balanced consumer groups use the 'topic1 topic2..' format"
-   #:usage-help "and for static assignment use 'topic1:part1 topic1:part2 topic2:part1..'"
-   #:args (topic . topics)
-   (cons topic topics)))
+
 
 (define (bytes->string bytes)
   (string-trim (bytes->string/latin-1 bytes) "\u0000" #:repeat? #t))
@@ -101,7 +81,7 @@
           (rd-kafka-metadata-broker-port broker)))
 
 (define (describe-groups client group)
-  (let-values ([(err g) (rd-kafka-list-groups client #f 10000)])
+  (let-values ([(err g) (rd-kafka-list-groups client group 10000)])
     (unless (eq? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
       (raise (format "%% failed to acquire group list: ~a" (rd-kafka-err2str err))))
     (let* ([group-list* (ptr-ref g _rd-kafka-group-list)]
@@ -133,54 +113,55 @@
     (rd-kafka-group-list-destroy g)))
 
 (define (format-partition-list partitions)
-  (let* ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)]
-         [partition-elms (rd-kafka-topic-partition-list-elems partitions)]
-         [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
-    (for/list ([p partition-lst])
-      (format "~a [~a] offset ~a"
-              (rd-kafka-topic-partition-topic p)
-              (rd-kafka-topic-partition-partition p)
-              (rd-kafka-topic-partition-offset p)))))
+  (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)]     )
+    (unless (zero? partition-cnt)
+      (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
+             [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
+        (for/list ([p partition-lst])
+          (format "~a [~a] offset ~a"
+                  (rd-kafka-topic-partition-topic p)
+                  (rd-kafka-topic-partition-partition p)
+                  (rd-kafka-topic-partition-offset p)))))))
 
 
 ;;
-;; TODO no procedural
+;; TODO rewrite
 (define (rebalance-cb client err partitions _)
   (display "%% Consumer group rebalanced: ")
   (let ([error #f]
         [ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR])
 
-    (match err
-      ['RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS
-       (displayln (format "assigned (~a): ~s"
-                          (rd-kafka-rebalance-protocol client)
-                          (format-partition-list partitions)))
-       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
-           (set! error (rd-kafka-incremental-assign client partitions))
-           (set! ret-err (rd-kafka-assign client partitions)))
-       (set! wait-eof (+ wait-eof (rd-kafka-topic-partition-list-cnt partitions)))]
+      (match err
+        ['RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS
+         (displayln (format "assigned (~a): ~s"
+                            (rd-kafka-rebalance-protocol client)
+                            (format-partition-list partitions)))
+         (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
+             (set! error (rd-kafka-incremental-assign client partitions))
+             (set! ret-err (rd-kafka-assign client partitions)))
+         (set! wait-eof (+ wait-eof (rd-kafka-topic-partition-list-cnt partitions)))]
 
-      ['RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS
-       (displayln (format "revoked (~a): ~s"
-                          (rd-kafka-rebalance-protocol client)
-                          (format-partition-list partitions)))
-       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
-           (begin
-             (set! error (rd-kafka-incremental-unassign client partitions))
-             (set! wait-eof (- wait-eof (rd-kafka-topic-partition-list-cnt partitions))))
-           (begin
-             (set! ret-err (rd-kafka-assign client #f))
-             (set! wait-eof 0)))]
+        ['RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS
+         (displayln (format "revoked  (~a): ~s"
+                            (rd-kafka-rebalance-protocol client)
+                            (format-partition-list partitions)))
+         (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
+             (begin
+               (set! error (rd-kafka-incremental-unassign client partitions))
+               (set! wait-eof (- wait-eof (rd-kafka-topic-partition-list-cnt partitions))))
+             (begin
+               (set! ret-err (rd-kafka-assign client #f))
+               (set! wait-eof 0)))]
 
-      [_ (displayln "failed: ~a" (rd-kafka-err2str err))
+        [_ (displayln "failed: ~a" (rd-kafka-err2str err))
          (rd-kafka-assign client #f)])
 
-    (cond
-      [error
-       (begin
-         (displayln (format "incremental assign failure: ~a" (rd-kafka-error-string error)))
-         (rd-kafka-error-destroy error))]
-      [(not (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR))
+      (cond
+        [error
+         (begin
+           (displayln (format "incremental assign failure: ~a" (rd-kafka-error-string error)))
+           (rd-kafka-error-destroy error))]
+        [(not (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR))
        (displayln (format "assign failure: ~a" (rd-kafka-err2str ret-err)))])))
 
 (define (make-partition-list lst)
@@ -240,13 +221,35 @@
                       (rd-kafka-err2str err)
                       (rd-kafka-message-errstr msg)))))])))
 
+(define topic-list
+  (command-line
+   #:program "complex-consumer"
+   #:argv argument-vec
+   #:once-each ["-g" g "Consumer group. ((null))" (group-id g)]
+   ["-q" "Be quiet." (verbose #f)]
+   ["-b" b "Broker address. (localhost:9092)" (brokers b)]
+   ["-e" "Exit consumer when last message ∈ partition has been received." (exit-eof #t)]
+   ["-D" "Describe group." (describe-group #t)]
+   ["-O" "Get committed offset(s)." (committed-offsets #t)]
+   ["-A" "Raw payload output (consumer)." (raw-output #t)]
+   #:multi
+   ["-d" flag "set debug flag (all,generic,broker,topic...)." (debug-flags (cons flag (debug-flags)))]
+   ["-X"
+    property
+    "Set arbitrary librdkafka configuration property (name=value)."
+    (properties (cons property (properties)))]
+   #:usage-help "For balanced consumer groups use the 'topic1 topic2..' format"
+   #:usage-help "and for static assignment use 'topic1:part1 topic1:part2 topic2:part1..'"
+   #:args (topic . topics)
+   (cons topic topics)))
+
 (try
  (let* ([errstr-len 256]
         [errstr (make-bytes errstr-len)]
         [table  (~> #hash()
                     (dict-set "enable.partition.eof" "true")
                     (dict-set "bootstrap.servers" (brokers))
-                    (dict-set "group.id" (consumer-group)))]
+                    (dict-set "group.id" (or (group-id) "complex-consumer")))]
         [table (if (null? (debug-flags))
                    table
                    (dict-set table "debug" (foldl string-append "" (add-between (debug-flags) ","))))]
@@ -260,7 +263,7 @@
      (exit))
 
    (when (describe-group)
-     (describe-groups client (consumer-group))
+     (describe-groups client (group-id))
      (exit))
 
    (let* ([topics (make-partition-list topic-list)])
@@ -292,14 +295,15 @@
  (catch
      (string? e) (displayln (format "%% string ~a" e))))
 
+
+
 (when (verbose)
   (begin
     (displayln "%% Running arguments:")
-    (displayln (format "%%\tconsumer-group = ~a" (consumer-group)))
+    (displayln (format "%%\tgroup.id = ~a" (group-id)))
     (displayln (format "%%\tbrokers = ~a" (brokers)))
     (displayln (format "%%\texit-eof = ~a" (exit-eof)))
     (displayln (format "%%\tverbose = ~a" (verbose)))
-    (displayln (format "%%\tdescribe-group = ~a" (describe-group)))
     (displayln (format "%%\tcommitted-offsets = ~a" (committed-offsets)))
     (displayln (format "%%\traw-output = ~a" (raw-output)))
     (displayln (format "%%\tproperties = ~a" (properties)))
