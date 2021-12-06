@@ -28,9 +28,11 @@
 
 (define RD_KAFKA_VERSION #x010802ff)
 
-(define-rdkafka rd-kafka-version (_fun -> _int))
+(define-rdkafka rd-kafka-version
+  (_fun -> _int))
 
-(define-rdkafka rd-kafka-version-str (_fun -> _string))
+(define-rdkafka rd-kafka-version-str
+  (_fun -> _string))
 
 (provide
  RD_KAFKA_VERSION
@@ -41,7 +43,9 @@
 ;;; @name Constants, errors, types
 ;;; ---------------------------------
 
-(define _rd-kafka-type (_enum '(RD_KAFKA_PRODUCER RD_KAFKA_CONSUMER)))
+(define _rd-kafka-type
+  (_enum
+   '(RD_KAFKA_PRODUCER RD_KAFKA_CONSUMER)))
 
 (define _rd-kafka-timestamp-type
   (_enum
@@ -87,15 +91,20 @@
                (filter-not empty?))])
     (_enum err-codes _fixint)))
 
-(define-rdkafka rd-kafka-err2str (_fun _rd-kafka-resp-err -> _string))
+(define-rdkafka rd-kafka-err2str
+  (_fun _rd-kafka-resp-err -> _string))
 
-(define-rdkafka rd-kafka-err2name (_fun _rd-kafka-resp-err -> _string))
+(define-rdkafka rd-kafka-err2name
+  (_fun _rd-kafka-resp-err -> _string))
 
-(define-rdkafka rd-kafka-last-error (_fun -> _rd-kafka-resp-err))
+(define-rdkafka rd-kafka-last-error
+  (_fun -> _rd-kafka-resp-err))
 
-(define-rdkafka rd-kafka-fatal-error (_fun _rd-kafka-pointer _pointer _int -> _rd-kafka-resp-err))
+(define-rdkafka rd-kafka-fatal-error
+  (_fun _rd-kafka-pointer _pointer _int -> _rd-kafka-resp-err))
 
-(define-rdkafka rd-kafka-error-code (_fun _rd-kafka-error-pointer -> _rd-kafka-resp-err))
+(define-rdkafka rd-kafka-error-code
+  (_fun _rd-kafka-error-pointer -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-error-name
   (_fun _rd-kafka-error-pointer -> _string))
@@ -106,11 +115,14 @@
 (define-rdkafka rd-kafka-error-destroy
   (_fun _rd-kafka-error-pointer -> _void))
 
-(define-rdkafka rd-kafka-error-is-fatal (_fun _rd-kafka-error-pointer -> _stdbool))
+(define-rdkafka rd-kafka-error-is-fatal
+  (_fun _rd-kafka-error-pointer -> _stdbool))
 
-(define-rdkafka rd-kafka-error-is-retriable (_fun _rd-kafka-error-pointer -> _stdbool))
+(define-rdkafka rd-kafka-error-is-retriable
+  (_fun _rd-kafka-error-pointer -> _stdbool))
 
-(define-rdkafka rd-kafka-error-txn-requires-abort (_fun _rd-kafka-error-pointer -> _stdbool))
+(define-rdkafka rd-kafka-error-txn-requires-abort
+  (_fun _rd-kafka-error-pointer -> _stdbool))
 
 (provide
  rd-kafka-err2str
@@ -140,15 +152,20 @@
    [offset _int64]
    (private _pointer)))
 
-(define-rdkafka rd-kafka-message-destroy (_fun _rd-kafka-message-pointer -> _void))
+(define-rdkafka rd-kafka-message-destroy
+  (_fun _rd-kafka-message-pointer -> _void))
 
-(define-rdkafka rd-kafka-message-errstr (_fun _rd-kafka-message-pointer -> _string))
+(define-rdkafka rd-kafka-message-errstr
+  (_fun _rd-kafka-message-pointer -> _string))
 
-(define-rdkafka rd-kafka-message-timestamp (_fun _rd-kafka-message-pointer -> _int64))
+(define-rdkafka rd-kafka-message-timestamp
+  (_fun _rd-kafka-message-pointer -> _int64))
 
-(define-rdkafka rd-kafka-message-latency (_fun _rd-kafka-message-pointer -> _int64))
+(define-rdkafka rd-kafka-message-latency
+  (_fun _rd-kafka-message-pointer -> _int64))
 
-(define-rdkafka rd-kafka-message-broker-id (_fun _rd-kafka-message-pointer -> _int32))
+(define-rdkafka rd-kafka-message-broker-id
+  (_fun _rd-kafka-message-pointer -> _int32))
 
 (define-rdkafka rd-kafka-message-headers
   (_fun _rd-kafka-message-pointer _pointer
@@ -164,7 +181,8 @@
      RD_KAFKA_MSG_STATUS_POSSIBLY_PERSISTED
      RD_KAFKA_MSG_STATUS_PERSISTED)))
 
-(define-rdkafka rd-kafka-message-status (_fun _rd-kafka-message-pointer -> _rd-kafka-msg-status))
+(define-rdkafka rd-kafka-message-status
+  (_fun _rd-kafka-message-pointer -> _rd-kafka-msg-status))
 
 (provide
  _rd-kafka-message
@@ -208,16 +226,20 @@
    [size _int]
    [elems _rd-kafka-topic-partition-pointer]))
 
-(define-rdkafka rd-kafka-conf-properties-show (_fun _pointer -> _void))
+(define-rdkafka rd-kafka-conf-properties-show
+  (_fun _pointer -> _void))
 
 (define-rdkafka rd-kafka-conf-set
   (_fun _rd-kafka-conf-pointer _string _string _bytes _size -> _rd-kafka-conf-res))
 
-(define-rdkafka rd-kafka-conf-dup (_fun _rd-kafka-conf-pointer -> _rd-kafka-conf-pointer))
+(define-rdkafka rd-kafka-conf-dup
+  (_fun _rd-kafka-conf-pointer -> _rd-kafka-conf-pointer))
 
-(define-rdkafka rd-kafka-conf (_fun _rd-kafka-pointer -> _rd-kafka-conf-pointer))
+(define-rdkafka rd-kafka-conf
+  (_fun _rd-kafka-pointer -> _rd-kafka-conf-pointer))
 
-(define-rdkafka rd-kafka-conf-set-events (_fun _rd-kafka-conf-pointer _int -> _void))
+(define-rdkafka rd-kafka-conf-set-events
+  (_fun _rd-kafka-conf-pointer _int -> _void))
 
 (define _dr-msg-cb
   (_fun _rd-kafka-pointer _rd-kafka-message-pointer _pointer -> _void))
@@ -228,11 +250,18 @@
         _pointer
         -> _void))
 
+(define _log-cb
+  (_fun _rd-kafka-pointer _int _string _string -> _void))
+
 (define-rdkafka rd-kafka-conf-set-dr-msg-cb
   (_fun _rd-kafka-conf-pointer _dr-msg-cb -> _void))
 
 (define-rdkafka rd-kafka-conf-set-rebalance-cb
   (_fun _rd-kafka-conf-pointer _rebalance-cb
+        -> _void))
+
+(define-rdkafka rd-kafka-conf-set-log-cb
+  (_fun _rd-kafka-conf-pointer _log-cb
         -> _void))
 
 (define _background-event-cb
@@ -241,7 +270,8 @@
 (define-rdkafka rd-kafka-conf-set-background-event-cb
   (_fun _rd-kafka-conf-pointer _background-event-cb -> _void))
 
-(define-rdkafka rd-kafka-conf-dump-free (_fun [arr : _pointer] [cnt : _size] -> _void))
+(define-rdkafka rd-kafka-conf-dump-free
+  (_fun [arr : _pointer] [cnt : _size] -> _void))
 
 (define-rdkafka rd-kafka-conf-dump
   (_fun _rd-kafka-conf-pointer
@@ -266,6 +296,10 @@
   (_fun _rd-kafka-conf-pointer -> _rd-kafka-topic-conf-pointer))
 
 (provide
+ _log-cb
+ _dr-msg-cb
+ _rebalance-cb
+ _background-event-cb
  rd-kafka-conf-properties-show
  rd-kafka-get-debug-contexts
  rd-kafka-conf-set
@@ -273,9 +307,7 @@
  rd-kafka-conf-dup
  rd-kafka-conf
  rd-kafka-conf-set-events
- _dr-msg-cb
- _rebalance-cb
- _background-event-cb
+ rd-kafka-conf-set-log-cb
  rd-kafka-conf-set-dr-msg-cb
  rd-kafka-conf-set-rebalance-cb
  rd-kafka-conf-set-background-event-cb
@@ -298,8 +330,29 @@
         -> _rd-kafka-pointer)
   #:wrap (allocator rd-kafka-destroy))
 
+(define-rdkafka rd-kafka-name
+  (_fun _rd-kafka-pointer -> _string))
+
+(define-rdkafka rd-kafka-type
+  (_fun _rd-kafka-pointer -> _rd-kafka-type))
+
+(define-rdkafka rd-kafka-mem-free
+  (_fun _rd-kafka-pointer _pointer -> _void))
+
+(define-rdkafka rd-kafka-memberid
+  (_fun (p : _rd-kafka-pointer)
+        -> (m : _pointer)
+        -> (let ([s (cast m _pointer _string)])
+             (rd-kafka-mem-free p m)
+             s)))
+
+
+
 (provide
- rd-kafka-new)
+ rd-kafka-new
+ rd-kafka-name
+ rd-kafka-type
+ rd-kafka-memberid)
 
 (define RD-KAFKA-MESG-F-FREE #x1)
 (define RD-KAFKA-MESG-F-COPY #x2)
@@ -373,6 +426,7 @@
  rd-kafka-poll
  rd-kafka-outq-len
  rd-kafka-flush)
+
 (define-rdkafka rd-kafka-commit
   (_fun _rd-kafka-pointer -> _rd-kafka-resp-err))
 
@@ -385,22 +439,28 @@
   #:wrap (allocator  rd-kafka-topic-partition-list-destroy))
 
 (define-rdkafka rd-kafka-topic-partition-list-add
-  (_fun _rd-kafka-topic-partition-list-pointer _string _int32 -> _rd-kafka-topic-partition-pointer))
+  (_fun _rd-kafka-topic-partition-list-pointer _string _int32
+        -> _rd-kafka-topic-partition-pointer))
 
 (define-rdkafka rd-kafka-topic-partition-list-add-range
-  (_fun _rd-kafka-topic-partition-list-pointer _string _int32 _int32 -> _void))
+  (_fun _rd-kafka-topic-partition-list-pointer
+        _string _int32 _int32
+        -> _void))
 
 (define-rdkafka rd-kafka-topic-partition-list-del
-  (_fun _rd-kafka-topic-partition-list-pointer _string _int32 -> _int))
+  (_fun _rd-kafka-topic-partition-list-pointer
+        _string _int32 -> _int))
 
 (define-rdkafka rd-kafka-topic-partition-list-del-by-idx
   (_fun _rd-kafka-topic-partition-list-pointer _int32 -> _int))
 
 (define-rdkafka rd-kafka-topic-partition-list-copy
-  (_fun _rd-kafka-topic-partition-list-pointer -> _rd-kafka-topic-partition-list-pointer))
+  (_fun _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-topic-partition-list-pointer))
 
 (define-rdkafka rd-kafka-topic-partition-list-set-offset
-  (_fun _rd-kafka-topic-partition-list-pointer _string _int32 _int64 -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-topic-partition-list-pointer _string _int32 _int64
+        -> _rd-kafka-resp-err))
 
 (provide
  _rd-kafka-topic-partition
@@ -425,22 +485,28 @@
   (_fun _rd-kafka-pointer -> _string))
 
 (define-rdkafka rd-kafka-assign
-  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer/null -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer/null
+        -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-incremental-assign
-  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-incremental-unassign
-  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-subscribe
-  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-consumer-poll
-  (_fun _rd-kafka-pointer _int -> _rd-kafka-message-pointer/null))
+  (_fun _rd-kafka-pointer _int
+        -> _rd-kafka-message-pointer/null))
 
 (define-rdkafka rd-kafka-consumer-close
-  (_fun _rd-kafka-pointer _int -> _rd-kafka-message-pointer))
+  (_fun _rd-kafka-pointer _int
+        -> _rd-kafka-message-pointer))
 
 (provide
  rd-kafka-poll-set-consumer
@@ -454,7 +520,8 @@
  rd-kafka-consumer-close)
 
 ;;;; TOPICS
-(define-rdkafka rd-kafka-topic-name (_fun _rd-kafka-topic-pointer -> _string))
+(define-rdkafka rd-kafka-topic-name
+  (_fun _rd-kafka-topic-pointer -> _string))
 
 (provide rd-kafka-topic-name)
 

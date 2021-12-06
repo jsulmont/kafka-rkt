@@ -24,8 +24,6 @@
 (define wait-eof 0)
 (define running #t)
 
-
-
 (define (bytes->string bytes)
   (string-trim (bytes->string/latin-1 bytes) "\u0000" #:repeat? #t))
 
@@ -113,7 +111,7 @@
     (rd-kafka-group-list-destroy g)))
 
 (define (format-partition-list partitions)
-  (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)]     )
+  (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
     (unless (zero? partition-cnt)
       (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
              [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
@@ -123,6 +121,21 @@
                   (rd-kafka-topic-partition-partition p)
                   (rd-kafka-topic-partition-offset p)))))))
 
+#;(date* 20 21 14 5 12 2021 0 338 #f 3600 141722917 "CET")
+#;(define format-date
+    (match-lambda
+    [(date* secs _ _ _ _ _ _ _ _ _ usec _)
+     (format "~a.~a" secs usec)]))
+
+(define (logger client level fac msg)
+  (displayln
+   (format "~a RDKAFKA-~a-~a: ~a: ~a "
+           (/ (current-inexact-milliseconds) 1000)
+           level fac (rd-kafka-name client) msg))
+  ;  (displayln (format "LOGGER ~a" level))
+  ;  (displayln (format "LOGGER ~a" fac))
+  ;  (displayln (format "LOGGER ~a" msg))
+  )
 
 ;;
 ;; TODO rewrite
@@ -233,11 +246,12 @@
    ["-O" "Get committed offset(s)." (committed-offsets #t)]
    ["-A" "Raw payload output (consumer)." (raw-output #t)]
    #:multi
-   ["-d" flag "set debug flag (all,generic,broker,topic...)." (debug-flags (cons flag (debug-flags)))]
-   ["-X"
-    property
-    "Set arbitrary librdkafka configuration property (name=value)."
-    (properties (cons property (properties)))]
+   ["-d" flag
+         "set debug flag (all,generic,broker,topic...)."
+         (debug-flags (cons flag (debug-flags)))]
+   ["-X" property
+         "Set arbitrary librdkafka configuration property (name=value)."
+         (properties (cons property (properties)))]
    #:usage-help "For balanced consumer groups use the 'topic1 topic2..' format"
    #:usage-help "and for static assignment use 'topic1:part1 topic1:part2 topic2:part1..'"
    #:args (topic . topics)
@@ -256,6 +270,7 @@
         [table (parse-properties (properties) table)]
         [conf (make-conf table errstr errstr-len)]
         [_ (rd-kafka-conf-set-rebalance-cb conf rebalance-cb)]
+        [_ (rd-kafka-conf-set-log-cb conf logger)]
         [client (make-consumer conf errstr errstr-len)])
 
    (when (dump-conf)
@@ -272,6 +287,7 @@
            (displayln (format "%% Subscribing to ~a topics"
                               (rd-kafka-topic-partition-list-cnt topics)))
            (let ([err (rd-kafka-subscribe client topics)])
+             (displayln "------- SUBSCRIED")
              (when (not (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR))
                (displayln (format "%% Failed to start consuming topics: ~a")
                           (rd-kafka-err2str err))
@@ -294,8 +310,6 @@
 
  (catch
      (string? e) (displayln (format "%% string ~a" e))))
-
-
 
 (when (verbose)
   (begin
