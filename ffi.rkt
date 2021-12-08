@@ -239,19 +239,25 @@
   (_fun _rd-kafka-pointer -> _rd-kafka-conf-pointer))
 
 (define-rdkafka rd-kafka-conf-set-events
-  (_fun _rd-kafka-conf-pointer _int -> _void))
+  (_fun #:atomic? #t  #:async-apply (λ (f) (f))
+        _rd-kafka-conf-pointer _int
+        -> _void))
 
 (define _dr-msg-cb
-  (_fun _rd-kafka-pointer _rd-kafka-message-pointer _pointer -> _void))
+  (_fun _rd-kafka-pointer _rd-kafka-message-pointer _pointer
+        -> _void))
 
 (define _rebalance-cb
-  (_fun _rd-kafka-pointer _rd-kafka-resp-err
+  (_fun #:atomic? #t #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _rd-kafka-resp-err
         _rd-kafka-topic-partition-list-pointer
         _pointer
         -> _void))
 
 (define _log-cb
-  (_fun _rd-kafka-pointer _int _string _string -> _void))
+  (_fun #:atomic? #t #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _int _string _string
+        -> _void))
 
 (define-rdkafka rd-kafka-conf-set-dr-msg-cb
   (_fun _rd-kafka-conf-pointer _dr-msg-cb -> _void))
@@ -345,8 +351,6 @@
         -> (let ([s (cast m _pointer _string)])
              (rd-kafka-mem-free p m)
              s)))
-
-
 
 (provide
  rd-kafka-new
