@@ -7,7 +7,7 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-A" "-g" "xoxo15" "transactions")
+      (vector "-A" "-d" "generic" "-g" "xoxo88" "transactions")
       (current-command-line-arguments)))
 
 (define group-id (make-parameter #f))
@@ -31,6 +31,10 @@
   (let ([res (rd-kafka-conf-set conf key value errstr errstr-len)])
     (unless (eq? res 'RD_KAFKA_CONF_OK)
       (raise (bytes->string errstr)))))
+
+(define (display-error-exit message err)
+  (displayln (format "% ERROR: ~a: ~a"  message (rd-kafka-err2str err)))
+  (exit 1))
 
 (define (make-conf table errstr errstr-len)
   (let ([conf (rd-kafka-conf-new)])
@@ -129,15 +133,12 @@
 
 (define (logger client level fac msg)
   (displayln
-   (format "~a RDKAFKA-~a-~a: ~a: ~a "
+   (format "~a || ~a RDKAFKA-~a-~a: ~a: ~a "
+           (current-thread)
            (/ (current-inexact-milliseconds) 1000)
-           level fac (rd-kafka-name client) msg))
-  ;  (displayln (format "LOGGER ~a" level))
-  ;  (displayln (format "LOGGER ~a" fac))
-  ;  (displayln (format "LOGGER ~a" msg))
-  )
+           level fac (rd-kafka-name client) msg)))
 
-;;
+
 ;; TODO rewrite
 (define (rebalance-cb client err partitions _)
   (display "%% Consumer group rebalanced: ")
@@ -257,10 +258,13 @@
    #:args (topic . topics)
    (cons topic topics)))
 
+
+
 (try
  (let* ([errstr-len 256]
         [errstr (make-bytes errstr-len)]
         [table  (~> #hash()
+                    (dict-set "log.queue" "true")
                     (dict-set "enable.partition.eof" "true")
                     (dict-set "bootstrap.servers" (brokers))
                     (dict-set "group.id" (or (group-id) "complex-consumer")))]
@@ -269,8 +273,8 @@
                    (dict-set table "debug" (foldl string-append "" (add-between (debug-flags) ","))))]
         [table (parse-properties (properties) table)]
         [conf (make-conf table errstr errstr-len)]
+        [log-queue null] [log-thread null]
         [_ (rd-kafka-conf-set-rebalance-cb conf rebalance-cb)]
-        [_ (rd-kafka-conf-set-log-cb conf logger)]
         [client (make-consumer conf errstr errstr-len)])
 
    (when (dump-conf)
@@ -281,33 +285,52 @@
      (describe-groups client (group-id))
      (exit))
 
+   (unless (null? (debug-flags))
+     (displayln "LGLOGLOGLOGLOGLOGLOG")
+     (set! log-queue (rd-kafka-queue-new client))
+     (let ([err (rd-kafka-set-log-queue client log-queue)])
+       (unless (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
+         (display-error-exit "Failed to set log queue" err)))
+     (let* ([logger (λ (client level fac msg)
+                      (displayln (format "~a RDKAFKA-~a-~a: ~a: ~a "
+                                         (/ (current-inexact-milliseconds) 1000)
+                                         level fac (rd-kafka-name client) msg)))]
+            [logger-thunk (λ ()
+                            (let loop ([evt (rd-kafka-queue-poll log-queue 200)])
+                              (displayln (format "XXXXXX ~a" (ptr-equal? evt #f)))
+                              (unless (equal? evt #f)
+                                (let-values ([(rc fac str level) (rd-kafka-event-log evt)])
+                                  (when (zero? rc) (logger client level fac str)))
+                                (rd-kafka-event-destroy evt))
+                              (when running
+                                (loop (rd-kafka-queue-poll log-queue 200)))))])
+       (set! log-thread (thread logger-thunk))
+       (displayln (format "YYYYYY ~a" (thread-running? log-thread)))
+       )
+
+     )
+
    (let* ([topics (make-partition-list topic-list)])
      (if (subscription?)
          (begin
            (displayln (format "%% Subscribing to ~a topics"
                               (rd-kafka-topic-partition-list-cnt topics)))
            (let ([err (rd-kafka-subscribe client topics)])
-             (displayln "------- SUBSCRIED")
-             (when (not (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR))
-               (displayln (format "%% Failed to start consuming topics: ~a")
-                          (rd-kafka-err2str err))
-               (exit 1))))
+             (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
+               (display-error-exit "Failed to start consuming topics" err))))
          (begin
            (displayln (format "%% Assigning ~a partitions"
                               (rd-kafka-topic-partition-list-cnt topics)))
            (let ([err (rd-kafka-assign client topics)])
-             (when (not (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR))
-               (displayln (format "%% Failed to start consuming topics: ~a")
-                          (rd-kafka-err2str err))
-               (exit 1)))))
+             (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
+               (display-error-exit "Failed to start consuming topics" err)))))
 
-     (let loop ([msg (rd-kafka-consumer-poll client 1000)])
+     (let loop ([msg (rd-kafka-consumer-poll client 200)])
        (unless (ptr-equal? msg #f)
          (message-consume msg)
          (rd-kafka-message-destroy msg))
        (when running
-         (loop (rd-kafka-consumer-poll client 1000))))))
-
+         (loop (rd-kafka-consumer-poll client 200))))))
  (catch
      (string? e) (displayln (format "%% string ~a" e))))
 

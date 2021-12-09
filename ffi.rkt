@@ -59,7 +59,7 @@
 (define _rd-kafka-conf-pointer (_cpointer 'rd-kafka-conf))
 (define _rd-kafka-topic-conf-pointer (_cpointer 'rd-kafka-topic-conf))
 (define _rd-kafka-queue-pointer (_cpointer 'rd-kafka-queue))
-(define _rd-kafka-event-pointer (_cpointer 'rd-kafka-event))
+(define _rd-kafka-event-pointer (_cpointer/null 'rd-kafka-event))
 (define _rd-kafka-topic-result-pointer (_cpointer 'rd-kafka-topic-result))
 (define _rd-kafka-consumer-group-metadata-pointer (_cpointer 'rd-kafka-consumer-group-metadata))
 (define _rd-kafka-error-pointer/null (_cpointer/null 'rd-kafka-error))
@@ -209,7 +209,11 @@
 
 (define _rd-kafka-conf-res
   (_enum
-   '(RD_KAFKA_CONF_UNKNOWN = -2 RD_KAFKA_CONF_INVALID = -1 RD_KAFKA_CONF_OK = 0) _fixint))
+   '(
+     RD_KAFKA_CONF_UNKNOWN = -2
+     RD_KAFKA_CONF_INVALID = -1
+     RD_KAFKA_CONF_OK = 0)
+   _fixint))
 
 (define-cstruct _rd-kafka-topic-partition
   ([topic _string]
@@ -239,42 +243,106 @@
   (_fun _rd-kafka-pointer -> _rd-kafka-conf-pointer))
 
 (define-rdkafka rd-kafka-conf-set-events
-  (_fun #:atomic? #t  #:async-apply (λ (f) (f))
-        _rd-kafka-conf-pointer _int
+  (_fun _rd-kafka-conf-pointer _int
         -> _void))
 
-(define _dr-msg-cb
-  (_fun _rd-kafka-pointer _rd-kafka-message-pointer _pointer
-        -> _void))
-
-(define _rebalance-cb
-  (_fun #:atomic? #t #:async-apply (λ (f) (f))
+(define _offset-commit-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
         _rd-kafka-pointer _rd-kafka-resp-err
         _rd-kafka-topic-partition-list-pointer
         _pointer
         -> _void))
 
-(define _log-cb
-  (_fun #:atomic? #t #:async-apply (λ (f) (f))
-        _rd-kafka-pointer _int _string _string
+(define-rdkafka rd-kafka-conf-set-offset-commit-cb
+  (_fun _rd-kafka-conf-pointer _offset-commit-cb
+        -> _void))
+
+(define _stats-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _string _size _pointer
+        -> _void))
+
+(define-rdkafka rd-kafka-conf-set-stats-cb
+  (_fun _rd-kafka-conf-pointer _stats-cb
+        -> _void))
+
+;; FIXME this callback is not possible, as it is called from all kind of
+;; rdkafka threads while holding all kind of locks
+#;(define _log-cb
+    (_fun #:atomic? #t
+          #:async-apply (λ (f) (f))
+          _rd-kafka-pointer _int _string _string
+          -> _void))
+
+#;(define-rdkafka rd-kafka-conf-set-log-cb
+    (_fun _rd-kafka-conf-pointer _log-cb
+          -> _void))
+
+(define _background-event-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _rd-kafka-event-pointer _pointer
+        -> _void))
+
+(define-rdkafka rd-kafka-conf-set-background-event-cb
+  (_fun _rd-kafka-conf-pointer _background-event-cb
+        -> _void))
+
+(define _dr-msg-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _rd-kafka-message-pointer _pointer
         -> _void))
 
 (define-rdkafka rd-kafka-conf-set-dr-msg-cb
   (_fun _rd-kafka-conf-pointer _dr-msg-cb -> _void))
 
+(define _rebalance-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _rd-kafka-resp-err
+        _rd-kafka-topic-partition-list-pointer
+        _pointer
+        -> _void))
+
 (define-rdkafka rd-kafka-conf-set-rebalance-cb
   (_fun _rd-kafka-conf-pointer _rebalance-cb
         -> _void))
 
-(define-rdkafka rd-kafka-conf-set-log-cb
-  (_fun _rd-kafka-conf-pointer _log-cb
+(define _throttle-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _int _string
+        _pointer
         -> _void))
 
-(define _background-event-cb
-  (_fun _rd-kafka-pointer _rd-kafka-event-pointer _pointer -> _void))
+(define-rdkafka rd-kafka-conf-set-throttle-cb
+  (_fun _rd-kafka-conf-pointer _rebalance-cb
+        -> _void))
 
-(define-rdkafka rd-kafka-conf-set-background-event-cb
-  (_fun _rd-kafka-conf-pointer _background-event-cb -> _void))
+(define _error-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _int _string
+        _pointer
+        -> _void))
+
+(define-rdkafka rd-kafka-conf-set-error-cb
+  (_fun _rd-kafka-conf-pointer _rebalance-cb
+        -> _void))
+
+(define _consume-cb
+  (_fun #:atomic? #t
+        #:async-apply (λ (f) (f))
+        _rd-kafka-pointer _rd-kafka-message-pointer
+        _pointer
+        -> _void))
+
+(define-rdkafka rd-kafka-conf-set-consume-cb
+  (_fun _rd-kafka-conf-pointer _consume-cb
+        -> _void))
 
 (define-rdkafka rd-kafka-conf-dump-free
   (_fun [arr : _pointer] [cnt : _size] -> _void))
@@ -295,36 +363,40 @@
               (rd-kafka-conf-dump-free arr cnt)
               lst)))
 
-(define-rdkafka rd-kafka-conf-set-default-topic-conf
-  (_fun _rd-kafka-conf-pointer _rd-kafka-topic-conf-pointer -> _void))
-
 (define-rdkafka rd-kafka-conf-get-default-topic-conf
   (_fun _rd-kafka-conf-pointer -> _rd-kafka-topic-conf-pointer))
 
 (provide
- _log-cb
- _dr-msg-cb
- _rebalance-cb
- _background-event-cb
- rd-kafka-conf-properties-show
- rd-kafka-get-debug-contexts
- rd-kafka-conf-set
- rd-kafka-conf-new
- rd-kafka-conf-dup
- rd-kafka-conf
- rd-kafka-conf-set-events
- rd-kafka-conf-set-log-cb
- rd-kafka-conf-set-dr-msg-cb
- rd-kafka-conf-set-rebalance-cb
- rd-kafka-conf-set-background-event-cb
- rd-kafka-conf-dump
- rd-kafka-conf-destroy
- rd-kafka-topic-conf-dump
- rd-kafka-conf-set-default-topic-conf
- rd-kafka-conf-get-default-topic-conf)
+  _stats-cb
+  _error-cb
+  _throttle-cb
+  _offset-commit-cb
+  _background-event-cb
+  _dr-msg-cb
+  _consume-cb
+  _rebalance-cb
+  rd-kafka-conf-properties-show
+  rd-kafka-get-debug-contexts
+  rd-kafka-conf-set
+  rd-kafka-conf-new
+  rd-kafka-conf-dup
+  rd-kafka-conf
+  rd-kafka-conf-dump
+  rd-kafka-conf-destroy
+  rd-kafka-conf-set-events
+  rd-kafka-conf-set-stats-cb
+  rd-kafka-conf-set-error-cb
+  rd-kafka-conf-set-error-cb
+  rd-kafka-conf-set-consume-cb
+  rd-kafka-conf-set-throttle-cb
+  rd-kafka-conf-set-rebalance-cb
+  rd-kafka-conf-set-offset-commit-cb
+  rd-kafka-conf-set-background-event-cb
+  rd-kafka-topic-conf-dump
+  rd-kafka-conf-get-default-topic-conf)
 
 ;;; ---------------------------------
-;;; @name Kafka main object
+;;; @name Kafka and Topic main object
 ;;; ---------------------------------
 
 (define-rdkafka rd-kafka-destroy
@@ -380,7 +452,33 @@
     rd-kafka-vtype-header
     rd-kafka-vtype-headers))
 
-(define _rd-kafka-vtype (_enum rd-kafka-vtypes))
+(define _rd-kafka-vtype
+  (_enum rd-kafka-vtypes))
+
+(define _rd-kafka-event-type
+  (_enum
+   '(
+     RD_KAFKA_EVENT_NONE = #x0
+     RD_KAFKA_EVENT_DR = #x1
+     RD_KAFKA_EVENT_FETCH = #x2
+     RD_KAFKA_EVENT_LOG = #x4
+     RD_KAFKA_EVENT_ERROR = #x8
+     RD_KAFKA_EVENT_REBALANCE = #x10
+     RD_KAFKA_EVENT_OFFSET_COMMIT = #x20
+     RD_KAFKA_EVENT_STATS = #x40
+     RD_KAFKA_EVENT_CREATETOPICS_RESULT = 100
+     RD_KAFKA_EVENT_DELETETOPICS_RESULT = 101
+     RD_KAFKA_EVENT_CREATEPARTITIONS_RESULT = 102
+     RD_KAFKA_EVENT_ALTERCONFIGS_RESULT = 103
+     RD_KAFKA_EVENT_DESCRIBECONFIGS_RESULT = 104
+     RD_KAFKA_EVENT_DELETERECORDS_RESULT = 105
+     RD_KAFKA_EVENT_DELETEGROUPS_RESULT = 106
+     RD_KAFKA_EVENT_DELETECONSUMERGROUPOFFSETS_RESULT = 107
+     RD_KAFKA_EVENT_OAUTHBEARER_TOKEN_REFRESH = #x100
+     RD_KAFKA_EVENT_BACKGROUND = #x200
+     RD_KAFKA_EVENT_CREATEACLS_RESULT = #x400
+     RD_KAFKA_EVENT_DESCRIBEACLS_RESULT = #x800
+     RD_KAFKA_EVENT_DELETEACLS_RESULT = #x1000)))
 
 ;;; TODO use `memoize`
 (define producev-interfaces (make-hash))
@@ -394,7 +492,7 @@
                    [(and (number? x) (real? x)) _double*]
                    [(string? x) _string]
                    [(bytes? x) _bytes]
-                   [(symbol? x) _symbol] ;; TODO add type for opaque
+                   [(symbol? x) _symbol] ;; TODO add types for all vtypes
                    [else (error 'rd-kafka-producev "don't know how to deal with ~e" x)]))
                args)))
   (let ([producev (hash-ref producev-interfaces
@@ -528,6 +626,66 @@
   (_fun _rd-kafka-topic-pointer -> _string))
 
 (provide rd-kafka-topic-name)
+
+;;; ---------------------------------
+;;; @name Queue  API
+;;; ---------------------------------
+(define-rdkafka rd-kafka-queue-new
+  (_fun _rd-kafka-pointer
+        -> _rd-kafka-queue-pointer))
+
+(define-rdkafka rd-kafka-queue-destroy
+  (_fun _rd-kafka-queue-pointer
+        -> _void))
+
+(define-rdkafka rd-kafka-queue-get-main
+  (_fun _rd-kafka-pointer
+        -> _rd-kafka-queue-pointer))
+
+(define-rdkafka rd-kafka-set-log-queue
+  (_fun _rd-kafka-pointer
+        _rd-kafka-queue-pointer
+        -> _rd-kafka-resp-err))
+
+(define-rdkafka rd-kafka-event-log
+  (_fun _rd-kafka-event-pointer
+        (fac : (_ptr o _string))
+        (str : (_ptr o _string))
+        (level : (_ptr o _int))
+        -> (rc : _int)
+        -> (values rc fac str level)))
+
+(define-rdkafka rd-kafka-event-destroy
+  (_fun _rd-kafka-event-pointer
+        -> _void))
+
+(define-rdkafka rd-kafka-event-type
+  (_fun _rd-kafka-event-pointer
+        -> _rd-kafka-event-type))
+
+(define-rdkafka rd-kafka-event-name
+  (_fun _rd-kafka-event-pointer
+        -> _string))
+
+(define-rdkafka rd-kafka-queue-length
+  (_fun _rd-kafka-queue-pointer
+        -> _size))
+
+(define-rdkafka rd-kafka-queue-poll
+  (_fun _rd-kafka-queue-pointer _int
+        -> _rd-kafka-event-pointer))
+
+(provide
+ rd-kafka-event-log
+ rd-kafka-event-type
+ rd-kafka-event-name
+ rd-kafka-event-destroy
+ rd-kafka-queue-new
+ rd-kafka-queue-destroy
+ rd-kafka-queue-get-main
+ rd-kafka-queue-length
+ rd-kafka-queue-poll
+ rd-kafka-set-log-queue)
 
 ;;; ---------------------------------
 ;;; @name Metadata API
