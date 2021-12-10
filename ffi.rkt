@@ -401,12 +401,14 @@
 
 (define-rdkafka rd-kafka-destroy
   (_fun _rd-kafka-pointer -> _void)
-  #:wrap (deallocator))
+  ;#:wrap (deallocator)
+  )
 
 (define-rdkafka rd-kafka-new
   (_fun _rd-kafka-type _rd-kafka-conf-pointer _bytes _size
         -> _rd-kafka-pointer)
-  #:wrap (allocator rd-kafka-destroy))
+  ;#:wrap (allocator rd-kafka-destroy)
+  )
 
 (define-rdkafka rd-kafka-name
   (_fun _rd-kafka-pointer -> _string))
@@ -428,6 +430,7 @@
  rd-kafka-new
  rd-kafka-name
  rd-kafka-type
+ rd-kafka-destroy
  rd-kafka-memberid)
 
 (define RD-KAFKA-MESG-F-FREE #x1)
@@ -532,6 +535,7 @@
 (define-rdkafka rd-kafka-commit
   (_fun _rd-kafka-pointer -> _rd-kafka-resp-err))
 
+;;
 (define-rdkafka rd-kafka-topic-partition-list-destroy
   (_fun _rd-kafka-topic-partition-list-pointer -> _void)
   #:wrap (deallocator))
@@ -607,8 +611,8 @@
         -> _rd-kafka-message-pointer/null))
 
 (define-rdkafka rd-kafka-consumer-close
-  (_fun _rd-kafka-pointer _int
-        -> _rd-kafka-message-pointer))
+  (_fun _rd-kafka-pointer
+        -> _rd-kafka-resp-err))
 
 (provide
  rd-kafka-poll-set-consumer
@@ -773,3 +777,15 @@
  (struct-out rd-kafka-group-list)
  rd-kafka-list-groups
  rd-kafka-group-list-destroy)
+
+;;; ---------------------------------
+;;; @name Group interface
+;;; ---------------------------------
+
+(define-rdkafka rd-kafka-wait-destroyed
+  (_fun _int -> _int))
+
+
+(provide
+ rd-kafka-wait-destroyed
+ )

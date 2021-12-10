@@ -3,6 +3,7 @@
 (require threading
          ffi/unsafe
          try-catch-finally
+         unix-signals
          "ffi.rkt")
 
 (define argument-vec
@@ -85,7 +86,7 @@
 (define (describe-groups client group)
   (let-values ([(err g) (rd-kafka-list-groups client group 10000)])
     (unless (eq? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
-      (raise (format "%% failed to acquire group list: ~a" (rd-kafka-err2str err))))
+      (raise (format "% failed to acquire group list: ~a" (rd-kafka-err2str err))))
     (let* ([group-list* (ptr-ref g _rd-kafka-group-list)]
            [len (rd-kafka-group-list-group-cnt group-list*)]
            [group-list (cblock->list (rd-kafka-group-list-groups group-list*) _rd-kafka-group-info len)])
@@ -141,7 +142,7 @@
 
 ;; TODO rewrite
 (define (rebalance-cb client err partitions _)
-  (display "%% Consumer group rebalanced: ")
+  (display "% Consumer group rebalanced: ")
   (let ([error #f]
         [ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR])
 
@@ -202,7 +203,7 @@
        (let ([key-len (rd-kafka-message-key-len msg)]
              [len (rd-kafka-message-len msg)])
          (when (verbose)
-           (displayln (format "%% Message (topic ~s [~a] offset ~a, ~a bytes)"
+           (displayln (format "% Message (topic ~s [~a] offset ~a, ~a bytes)"
                               topic-name partition offset len)))
          (when (positive? key-len)
            (displayln (format "Key: ~a" ;; TODO -A (hexdump)
@@ -215,23 +216,23 @@
       ['RD_KAFKA_RESP_ERR__PARTITION_EOF
        (begin
          (displayln
-          (format "%% Consumer reached end of ~a [~a] message queue at offset ~a"
+          (format "% Consumer reached end of ~a [~a] message queue at offset ~a"
                   topic-name partition offset))
          (when (exit-eof)
            (set! wait-eof (sub1 wait-eof))
            (when (zero? wait-eof)
-             (displayln "%% All partition(s) reached EOF: exiting")
+             (displayln "% All partition(s) reached EOF: exiting")
              (set! running #f))))]
 
       [else
        (begin
          (if (not (ptr-equal? topic #f))
              (displayln
-              (format "%% Consume error for topic ~s [~a] offset ~a: ~a"
+              (format "% Consume error for topic ~s [~a] offset ~a: ~a"
                       topic-name partition offset
                       (rd-kafka-message-errstr msg)))
              (displayln
-              (format "%% Consumer error: ~a: ~a"
+              (format "% Consumer error: ~a: ~a"
                       (rd-kafka-err2str err)
                       (rd-kafka-message-errstr msg)))))])))
 
@@ -258,7 +259,7 @@
    #:args (topic . topics)
    (cons topic topics)))
 
-
+(capture-signal! 'SIGINT)
 
 (try
  (let* ([errstr-len 256]
@@ -285,8 +286,13 @@
      (describe-groups client (group-id))
      (exit))
 
+   (thread (λ () (let loop ()
+                   (define signum (read-signal))
+                   (printf "Received signal ~v (name ~v)\n" signum (lookup-signal-name signum))
+                   (set! running #f)
+                   (loop))))
+
    (unless (null? (debug-flags))
-     (displayln "LGLOGLOGLOGLOGLOGLOG")
      (set! log-queue (rd-kafka-queue-new client))
      (let ([err (rd-kafka-set-log-queue client log-queue)])
        (unless (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
@@ -297,29 +303,24 @@
                                          level fac (rd-kafka-name client) msg)))]
             [logger-thunk (λ ()
                             (let loop ([evt (rd-kafka-queue-poll log-queue 200)])
-                              (displayln (format "XXXXXX ~a" (ptr-equal? evt #f)))
                               (unless (equal? evt #f)
                                 (let-values ([(rc fac str level) (rd-kafka-event-log evt)])
                                   (when (zero? rc) (logger client level fac str)))
                                 (rd-kafka-event-destroy evt))
                               (when running
                                 (loop (rd-kafka-queue-poll log-queue 200)))))])
-       (set! log-thread (thread logger-thunk))
-       (displayln (format "YYYYYY ~a" (thread-running? log-thread)))
-       )
-
-     )
+       (set! log-thread (thread logger-thunk))))
 
    (let* ([topics (make-partition-list topic-list)])
      (if (subscription?)
          (begin
-           (displayln (format "%% Subscribing to ~a topics"
+           (displayln (format "% Subscribing to ~a topics"
                               (rd-kafka-topic-partition-list-cnt topics)))
            (let ([err (rd-kafka-subscribe client topics)])
              (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
                (display-error-exit "Failed to start consuming topics" err))))
          (begin
-           (displayln (format "%% Assigning ~a partitions"
+           (displayln (format "% Assigning ~a partitions"
                               (rd-kafka-topic-partition-list-cnt topics)))
            (let ([err (rd-kafka-assign client topics)])
              (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
@@ -330,19 +331,37 @@
          (message-consume msg)
          (rd-kafka-message-destroy msg))
        (when running
-         (loop (rd-kafka-consumer-poll client 200))))))
+         (loop (rd-kafka-consumer-poll client 200))))
+
+     (displayln "% Shutting down")
+     (let ([err (rd-kafka-consumer-close client)])
+       (if (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
+           (displayln "% Consumer closed")
+           (displayln (format "% Failed to close consumer: ~a"
+                              (rd-kafka-err2str err))))))
+   (rd-kafka-destroy client)
+
+   (let loop ([run 10]
+              [rc (rd-kafka-wait-destroyed 1000)])
+     (unless (or (zero? run) (zero? rc))
+       (displayln "Waiting for librdkafka to decommission")
+       (loop (sub1 run) (rd-kafka-wait-destroyed 1000))))
+
+   )
+
+
  (catch
-     (string? e) (displayln (format "%% string ~a" e))))
+     (string? e) (displayln (format "% string ~a" e))))
 
 (when (verbose)
   (begin
-    (displayln "%% Running arguments:")
-    (displayln (format "%%\tgroup.id = ~a" (group-id)))
-    (displayln (format "%%\tbrokers = ~a" (brokers)))
-    (displayln (format "%%\texit-eof = ~a" (exit-eof)))
-    (displayln (format "%%\tverbose = ~a" (verbose)))
-    (displayln (format "%%\tcommitted-offsets = ~a" (committed-offsets)))
-    (displayln (format "%%\traw-output = ~a" (raw-output)))
-    (displayln (format "%%\tproperties = ~a" (properties)))
-    (displayln (format "%%\tdebug-flags = ~a" (debug-flags)))
-    (displayln (format "%%\ttopics = ~a" topic-list))))
+    (displayln "% Running arguments:")
+    (displayln (format "%\tgroup.id = ~a" (group-id)))
+    (displayln (format "%\tbrokers = ~a" (brokers)))
+    (displayln (format "%\texit-eof = ~a" (exit-eof)))
+    (displayln (format "%\tverbose = ~a" (verbose)))
+    (displayln (format "%\tcommitted-offsets = ~a" (committed-offsets)))
+    (displayln (format "%\traw-output = ~a" (raw-output)))
+    (displayln (format "%\tproperties = ~a" (properties)))
+    (displayln (format "%\tdebug-flags = ~a" (debug-flags)))
+    (displayln (format "%\ttopics = ~a" topic-list))))
