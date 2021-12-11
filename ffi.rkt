@@ -124,6 +124,10 @@
 (define-rdkafka rd-kafka-error-txn-requires-abort
   (_fun _rd-kafka-error-pointer -> _stdbool))
 
+(define-rdkafka rd-kafka-test-fatal-error
+  (_fun _rd-kafka-pointer _rd-kafka-resp-err _string
+        -> _rd-kafka-resp-err))
+
 (provide
  rd-kafka-err2str
  rd-kafka-err2name
@@ -132,6 +136,7 @@
  rd-kafka-error-code
  rd-kafka-error-name
  rd-kafka-error-string
+ rd-kafka-test-fatal-error
  rd-kafka-error-destroy
  rd-kafka-error-is-fatal
  rd-kafka-error-is-retriable
@@ -234,7 +239,8 @@
   (_fun _pointer -> _void))
 
 (define-rdkafka rd-kafka-conf-set
-  (_fun _rd-kafka-conf-pointer _string _string _bytes _size -> _rd-kafka-conf-res))
+  (_fun _rd-kafka-conf-pointer _string _string
+        _bytes _size -> _rd-kafka-conf-res))
 
 (define-rdkafka rd-kafka-conf-dup
   (_fun _rd-kafka-conf-pointer -> _rd-kafka-conf-pointer))
@@ -293,11 +299,14 @@
 (define _dr-msg-cb
   (_fun #:atomic? #t
         #:async-apply (λ (f) (f))
-        _rd-kafka-pointer _rd-kafka-message-pointer _pointer
+        _rd-kafka-pointer
+        _rd-kafka-message-pointer
+        _pointer
         -> _void))
 
 (define-rdkafka rd-kafka-conf-set-dr-msg-cb
-  (_fun _rd-kafka-conf-pointer _dr-msg-cb -> _void))
+  (_fun _rd-kafka-conf-pointer _dr-msg-cb
+        -> _void))
 
 (define _rebalance-cb
   (_fun #:atomic? #t
@@ -319,18 +328,18 @@
         -> _void))
 
 (define-rdkafka rd-kafka-conf-set-throttle-cb
-  (_fun _rd-kafka-conf-pointer _rebalance-cb
+  (_fun _rd-kafka-conf-pointer _throttle-cb
         -> _void))
 
 (define _error-cb
   (_fun #:atomic? #t
         #:async-apply (λ (f) (f))
-        _rd-kafka-pointer _int _string
+        _rd-kafka-pointer _rd-kafka-resp-err  _string
         _pointer
         -> _void))
 
 (define-rdkafka rd-kafka-conf-set-error-cb
-  (_fun _rd-kafka-conf-pointer _rebalance-cb
+  (_fun _rd-kafka-conf-pointer _error-cb
         -> _void))
 
 (define _consume-cb
@@ -390,6 +399,7 @@
   rd-kafka-conf-set-consume-cb
   rd-kafka-conf-set-throttle-cb
   rd-kafka-conf-set-rebalance-cb
+  rd-kafka-conf-set-dr-msg-cb
   rd-kafka-conf-set-offset-commit-cb
   rd-kafka-conf-set-background-event-cb
   rd-kafka-topic-conf-dump
@@ -514,6 +524,20 @@
 (define-rdkafka rd-kafka-poll
   (_fun _rd-kafka-pointer _int -> _int))
 
+(define-rdkafka rd-kafka-yield
+  (_fun _rd-kafka-pointer  -> _void))
+
+(define-rdkafka rd-kafka-pause-partitions
+  (_fun _rd-kafka-pointer
+        _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-resp-err))
+
+(define-rdkafka rd-kafka-resume-partitions
+  (_fun _rd-kafka-pointer
+        _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-resp-err))
+
+
 (define-rdkafka rd-kafka-outq-len
   (_fun _rd-kafka-pointer -> _int))
 
@@ -580,7 +604,10 @@
  rd-kafka-topic-partition-list-del
  rd-kafka-topic-partition-list-del-by-idx
  rd-kafka-topic-partition-list-copy
- rd-kafka-topic-partition-list-set-offset)
+ rd-kafka-topic-partition-list-set-offset
+ rd-kafka-yield
+ rd-kafka-pause-partitions
+ rd-kafka-resume-partitions)
 
 (define-rdkafka rd-kafka-poll-set-consumer
   (_fun _rd-kafka-pointer -> _rd-kafka-resp-err))

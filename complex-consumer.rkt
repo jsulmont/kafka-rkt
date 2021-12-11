@@ -132,14 +132,6 @@
     [(date* secs _ _ _ _ _ _ _ _ _ usec _)
      (format "~a.~a" secs usec)]))
 
-(define (logger client level fac msg)
-  (displayln
-   (format "~a || ~a RDKAFKA-~a-~a: ~a: ~a "
-           (current-thread)
-           (/ (current-inexact-milliseconds) 1000)
-           level fac (rd-kafka-name client) msg)))
-
-
 ;; TODO rewrite
 (define (rebalance-cb client err partitions _)
   (display "% Consumer group rebalanced: ")
@@ -334,20 +326,19 @@
          (loop (rd-kafka-consumer-poll client 200))))
 
      (displayln "% Shutting down")
-     (let ([err (rd-kafka-consumer-close client)])
-       (if (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
-           (displayln "% Consumer closed")
-           (displayln (format "% Failed to close consumer: ~a"
-                              (rd-kafka-err2str err))))))
-   (rd-kafka-destroy client)
 
-   (let loop ([run 10]
-              [rc (rd-kafka-wait-destroyed 1000)])
-     (unless (or (zero? run) (zero? rc))
-       (displayln "Waiting for librdkafka to decommission")
-       (loop (sub1 run) (rd-kafka-wait-destroyed 1000))))
+     (match (rd-kafka-consumer-close client)
+       ['RD_KAFKA_RESP_ERR_NO_ERROR  (displayln "% Consumer closed")]
+       [err (displayln (format "% Failed to close consumer: ~a"
+                               (rd-kafka-err2str err)))])
 
-   )
+     (rd-kafka-destroy client)
+
+     (let loop ([run 10]
+                [rc (rd-kafka-wait-destroyed 1000)])
+       (unless (or (zero? run) (zero? rc))
+         (displayln "Waiting for librdkafka to decommission")
+         (loop (sub1 run) (rd-kafka-wait-destroyed 1000))))))
 
 
  (catch
