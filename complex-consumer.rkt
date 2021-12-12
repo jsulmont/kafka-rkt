@@ -2,9 +2,31 @@
 
 (require threading
          ffi/unsafe
+         ;; ffi/unsafe/os-thread
+         ;; ffi/unsafe/os-async-channel
          try-catch-finally
          unix-signals
          "ffi.rkt")
+
+(void (capture-signal! 'SIGINT))
+
+(define signal-channel (make-channel))
+
+(define signal-thunk
+  (λ ()
+    (let loop ()
+    (define signum (read-signal))
+    (printf "Received signal ~v (name ~v)\n" signum (lookup-signal-name signum))
+    (channel-put signal-channel signum)
+    (loop))))
+
+(define _signal-thread (thread signal-thunk))
+
+(define (running?)
+  (not (channel-try-get signal-channel)))
+
+(define (shutdown!)
+  (channel-put signal-channel 'BOOM))
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
@@ -23,7 +45,6 @@
 (define subscription? (make-parameter #t))
 (define exit-eof (make-parameter #f))
 (define wait-eof 0)
-(define running #t)
 
 (define (bytes->string bytes)
   (string-trim (bytes->string/latin-1 bytes) "\u0000" #:repeat? #t))
@@ -214,7 +235,7 @@
            (set! wait-eof (sub1 wait-eof))
            (when (zero? wait-eof)
              (displayln "% All partition(s) reached EOF: exiting")
-             (set! running #f))))]
+             (shutdown!))))]
 
       [else
        (begin
@@ -251,8 +272,6 @@
    #:args (topic . topics)
    (cons topic topics)))
 
-(capture-signal! 'SIGINT)
-
 (try
  (let* ([errstr-len 256]
         [errstr (make-bytes errstr-len)]
@@ -278,11 +297,7 @@
      (describe-groups client (group-id))
      (exit))
 
-   (thread (λ () (let loop ()
-                   (define signum (read-signal))
-                   (printf "Received signal ~v (name ~v)\n" signum (lookup-signal-name signum))
-                   (set! running #f)
-                   (loop))))
+   
 
    (unless (null? (debug-flags))
      (set! log-queue (rd-kafka-queue-new client))
@@ -299,7 +314,7 @@
                                 (let-values ([(rc fac str level) (rd-kafka-event-log evt)])
                                   (when (zero? rc) (logger client level fac str)))
                                 (rd-kafka-event-destroy evt))
-                              (when running
+                              (when (running?)
                                 (loop (rd-kafka-queue-poll log-queue 200)))))])
        (set! log-thread (thread logger-thunk))))
 
@@ -322,7 +337,7 @@
        (unless (ptr-equal? msg #f)
          (message-consume msg)
          (rd-kafka-message-destroy msg))
-       (when running
+       (when (running?)
          (loop (rd-kafka-consumer-poll client 200))))
 
      (displayln "% Shutting down")
