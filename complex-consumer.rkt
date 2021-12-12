@@ -2,8 +2,6 @@
 
 (require threading
          ffi/unsafe
-         ;; ffi/unsafe/os-thread
-         ;; ffi/unsafe/os-async-channel
          try-catch-finally
          unix-signals
          "ffi.rkt")
@@ -136,7 +134,7 @@
                 (displayln))))))))
     (rd-kafka-group-list-destroy g)))
 
-(define (format-partition-list partitions)
+(define (format-topar-list partitions)
   (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
     (unless (zero? partition-cnt)
       (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
@@ -159,38 +157,38 @@
   (let ([error #f]
         [ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR])
 
-      (match err
-        ['RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS
-         (displayln (format "assigned (~a): ~s"
-                            (rd-kafka-rebalance-protocol client)
-                            (format-partition-list partitions)))
-         (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
-             (set! error (rd-kafka-incremental-assign client partitions))
-             (set! ret-err (rd-kafka-assign client partitions)))
-         (set! wait-eof (+ wait-eof (rd-kafka-topic-partition-list-cnt partitions)))]
+    (match err
+      ['RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS
+       (displayln (format "assigned (~a): ~s"
+                          (rd-kafka-rebalance-protocol client)
+                          (format-topar-list partitions)))
+       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
+           (set! error (rd-kafka-incremental-assign client partitions))
+           (set! ret-err (rd-kafka-assign client partitions)))
+       (set! wait-eof (+ wait-eof (rd-kafka-topic-partition-list-cnt partitions)))]
 
-        ['RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS
-         (displayln (format "revoked  (~a): ~s"
-                            (rd-kafka-rebalance-protocol client)
-                            (format-partition-list partitions)))
-         (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
-             (begin
-               (set! error (rd-kafka-incremental-unassign client partitions))
-               (set! wait-eof (- wait-eof (rd-kafka-topic-partition-list-cnt partitions))))
-             (begin
-               (set! ret-err (rd-kafka-assign client #f))
-               (set! wait-eof 0)))]
+      ['RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS
+       (displayln (format "revoked  (~a): ~s"
+                          (rd-kafka-rebalance-protocol client)
+                          (format-topar-list partitions)))
+       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
+           (begin
+             (set! error (rd-kafka-incremental-unassign client partitions))
+             (set! wait-eof (- wait-eof (rd-kafka-topic-partition-list-cnt partitions))))
+           (begin
+             (set! ret-err (rd-kafka-assign client #f))
+             (set! wait-eof 0)))]
 
-        [_ (displayln "failed: ~a" (rd-kafka-err2str err))
+      [_ (displayln "failed: ~a" (rd-kafka-err2str err))
          (rd-kafka-assign client #f)])
 
-      (cond
-        [error
-         (begin
-           (displayln (format "incremental assign failure: ~a" (rd-kafka-error-string error)))
-           (rd-kafka-error-destroy error))]
-        [(not (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR))
-       (displayln (format "assign failure: ~a" (rd-kafka-err2str ret-err)))])))
+    (cond
+      [error
+       (begin
+         (displayln (format "% incremental assign failure: ~a" (rd-kafka-error-string error)))
+         (rd-kafka-error-destroy error))]
+      [(not (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR))
+       (displayln (format "% assign failure: ~a" (rd-kafka-err2str ret-err)))])))
 
 (define (make-partition-list lst)
   (let ([topics (rd-kafka-topic-partition-list-new (length lst))])
@@ -296,8 +294,6 @@
    (when (describe-group)
      (describe-groups client (group-id))
      (exit))
-
-   
 
    (unless (null? (debug-flags))
      (set! log-queue (rd-kafka-queue-new client))

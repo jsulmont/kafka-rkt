@@ -95,9 +95,7 @@
    #:once-each
    ["-b" b  "Bootstrap server" (brokers b)]
    #:args (topic) 
-   ; return the argument as a filename to compile
    topic))
-
 
 (let* ([errstr-len 256]
        [errstr (make-bytes errstr-len)]
@@ -109,11 +107,12 @@
        [_ (rd-kafka-conf-set-error-cb conf error-cb)]
        [client (make-producer conf errstr errstr-len)]
        [msgcnt 0]
-       [signal-thunk (thread (λ () (let loop ()
-                                     (define signum (read-signal))
-                                     (printf "Received signal ~v (name ~v)\n" signum (lookup-signal-name signum))
-                                     (stop)
-                                     (loop))))])
+       [signal-thunk
+        (thread (λ () (let loop ()
+                        (define signum (read-signal))
+                        (printf "Received signal ~v (name ~v)\n" signum (lookup-signal-name signum))
+                        (stop)
+                        (loop))))])
   (let loop ()
     (when running?
       (let* ([key (uuid-string)]
