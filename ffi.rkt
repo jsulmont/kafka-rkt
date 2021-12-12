@@ -562,11 +562,13 @@
 ;;
 (define-rdkafka rd-kafka-topic-partition-list-destroy
   (_fun _rd-kafka-topic-partition-list-pointer -> _void)
-  #:wrap (deallocator))
+  #:wrap (deallocator)
+  )
 
 (define-rdkafka rd-kafka-topic-partition-list-new
   (_fun _int -> _rd-kafka-topic-partition-list-pointer)
-  #:wrap (allocator  rd-kafka-topic-partition-list-destroy))
+  #:wrap (allocator  rd-kafka-topic-partition-list-destroy)
+  )
 
 (define-rdkafka rd-kafka-topic-partition-list-add
   (_fun _rd-kafka-topic-partition-list-pointer _string _int32
@@ -596,9 +598,11 @@
  _rd-kafka-topic-partition
  (struct-out rd-kafka-topic-partition)
  _rd-kafka-topic-partition-list
+ _rd-kafka-topic-partition-list-pointer
  (struct-out rd-kafka-topic-partition-list)
  rd-kafka-commit
  rd-kafka-topic-partition-list-new
+ rd-kafka-topic-partition-list-destroy
  rd-kafka-topic-partition-list-add
  rd-kafka-topic-partition-list-add-range
  rd-kafka-topic-partition-list-del
@@ -620,6 +624,17 @@
 (define-rdkafka rd-kafka-assign
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer/null
         -> _rd-kafka-resp-err))
+
+#;(define-rdkafka rd-kafka-assignment
+    (_fun _rd-kafka-pointer
+        _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-resp-err<))
+
+(define-rdkafka rd-kafka-assignment
+  (_fun _rd-kafka-pointer
+        (pl : (_ptr o _rd-kafka-topic-partition-list-pointer))
+        -> (e : _rd-kafka-resp-err)
+        -> (values e pl)))
 
 (define-rdkafka rd-kafka-incremental-assign
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
@@ -646,6 +661,7 @@
  RD_KAFKA_PARTITION_UA
  rd-kafka-subscribe
  rd-kafka-assign
+ rd-kafka-assignment
  rd-kafka-incremental-assign
  rd-kafka-incremental-unassign
  rd-kafka-rebalance-protocol
