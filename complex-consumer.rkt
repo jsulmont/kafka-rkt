@@ -28,7 +28,7 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-A" "-d" "generic" "-g" "xoxo88" "transactions")
+      (vector "-A" "-X" "partition.assignment.strategy=cooperative-sticky" "-g" "xoxo11" "transactions")
       (current-command-line-arguments)))
 
 (define group-id (make-parameter #f))
@@ -136,8 +136,8 @@
 
 (define (format-topar-list partitions)
   (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
-    (unless (zero? partition-cnt)
-      (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
+    (if (zero? partition-cnt) '()
+        (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
              [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
         (for/list ([p partition-lst])
           (format "~a [~a] offset ~a"
@@ -145,11 +145,10 @@
                   (rd-kafka-topic-partition-partition p)
                   (rd-kafka-topic-partition-offset p)))))))
 
-#;(date* 20 21 14 5 12 2021 0 338 #f 3600 141722917 "CET")
 #;(define format-date
     (match-lambda
-    [(date* secs _ _ _ _ _ _ _ _ _ usec _)
-     (format "~a.~a" secs usec)]))
+      [(date* secs _ _ _ _ _ _ _ _ _ usec _)
+       (format "~a.~a" secs usec)]))
 
 ;; TODO rewrite
 (define (rebalance-cb client err partitions _)
@@ -182,13 +181,12 @@
       [_ (displayln "failed: ~a" (rd-kafka-err2str err))
          (rd-kafka-assign client #f)])
 
-    (cond
-      [error
-       (begin
-         (displayln (format "% incremental assign failure: ~a" (rd-kafka-error-string error)))
-         (rd-kafka-error-destroy error))]
-      [(not (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR))
-       (displayln (format "% assign failure: ~a" (rd-kafka-err2str ret-err)))])))
+    (when error ;; error object
+      (displayln (format "% incremental assign failure: ~a" (rd-kafka-error-string error)))
+      (rd-kafka-error-destroy error))
+
+    (unless (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR) ;; versus enum
+      (displayln (format "% assign failure: ~a" (rd-kafka-err2str ret-err))))))
 
 (define (make-partition-list lst)
   (let ([topics (rd-kafka-topic-partition-list-new (length lst))])

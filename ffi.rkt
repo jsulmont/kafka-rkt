@@ -14,8 +14,8 @@
   (ffi-lib "librdkafka" '("1" #f)
            #:get-lib-dirs
            (λ ()
-             (cons #;(string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
-                   (string->path "/Users/jsulmont/dev/rdkafka")
+             (cons (string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
+                   #;(string->path "/Users/jsulmont/dev/rdkafka")
                    (get-lib-search-dirs)))))
 
 (define-ffi-definer define-rdkafka
@@ -638,11 +638,11 @@
 
 (define-rdkafka rd-kafka-incremental-assign
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
-        -> _rd-kafka-resp-err))
+        -> _rd-kafka-error-pointer/null))
 
 (define-rdkafka rd-kafka-incremental-unassign
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
-        -> _rd-kafka-resp-err))
+        -> _rd-kafka-error-pointer/null))
 
 (define-rdkafka rd-kafka-subscribe
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
