@@ -1,6 +1,7 @@
 #lang racket
 
 (require threading
+         racket/async-channel
          ffi/unsafe
          try-catch-finally
          unix-signals
@@ -8,27 +9,27 @@
 
 (void (capture-signal! 'SIGINT))
 
-(define signal-channel (make-channel))
+(define signal-channel (make-async-channel))
 
 (define signal-thunk
   (λ ()
     (let loop ()
     (define signum (read-signal))
     (printf "Received signal ~v (name ~v)\n" signum (lookup-signal-name signum))
-    (channel-put signal-channel signum)
+    (async-channel-put signal-channel signum)
     (loop))))
 
 (define _signal-thread (thread signal-thunk))
 
 (define (running?)
-  (not (channel-try-get signal-channel)))
+  (not (async-channel-try-get signal-channel)))
 
 (define (shutdown!)
-  (channel-put signal-channel 'BOOM))
+  (async-channel-put signal-channel 'BOOM))
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-A" "-X" "partition.assignment.strategy=cooperative-sticky" "-g" "xoxo11" "transactions")
+      (vector "-A" "-q" "-X" "partition.assignment.strategy=cooperative-sticky" "-g" "xoxo13" "transactions")
       (current-command-line-arguments)))
 
 (define group-id (make-parameter #f))
@@ -200,48 +201,50 @@
         (rd-kafka-topic-partition-list-add topics (car seq) partition)))
     topics))
 
+
 (define (message-consume msg)
   (let* ([err (rd-kafka-message-err msg)]
-         [topic (rd-kafka-message-rkt msg)]
-         [topic-name (rd-kafka-topic-name topic)]
-         [offset (rd-kafka-message-offset msg)]
-         [partition (rd-kafka-message-partition msg)])
-
-    (case err
-      ['RD_KAFKA_RESP_ERR_NO_ERROR
-       (let ([key-len (rd-kafka-message-key-len msg)]
-             [len (rd-kafka-message-len msg)])
-         (when (verbose)
-           (displayln (format "% Message (topic ~s [~a] offset ~a, ~a bytes)"
-                              topic-name partition offset len)))
-         (when (positive? key-len)
-           (displayln (format "Key: ~a" ;; TODO -A (hexdump)
-                              (~> (rd-kafka-message-key msg)
-                                  (bytes->string/latin-1 #f 0 key-len)))))
-         (displayln (format "~a"
-                            (~> (rd-kafka-message-payload msg)
-                                (bytes->string/latin-1 #f 0 len)))))]
-
-      ['RD_KAFKA_RESP_ERR__PARTITION_EOF
+         [topic (rd-kafka-message-rkt msg)])
+    (match err
+      [(or 'RD_KAFKA_RESP_ERR_NO_ERROR 'RD_KAFKA_RESP_ERR__PARTITION_EOF)
+       (let ([topic-name (rd-kafka-topic-name topic)]
+             [offset (rd-kafka-message-offset msg)]
+             [partition (rd-kafka-message-partition msg)])
+         (if (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
+             (begin 
+               (let ([key-len (rd-kafka-message-key-len msg)]
+                     [len (rd-kafka-message-len msg)])
+                 (when (verbose)
+                   (displayln (format "% Message (topic ~s [~a] offset ~a, ~a bytes)"
+                                      topic-name partition offset len)))
+                 (when (positive? key-len)
+                   (displayln (format "Key: ~a" ;; TODO -A (hexdump)
+                                      (~> (rd-kafka-message-key msg)
+                                          (bytes->string/latin-1 #f 0 key-len)))))
+                 (displayln (format "~a"
+                                    (~> (rd-kafka-message-payload msg)
+                                        (bytes->string/latin-1 #f 0 len))))))
+             (begin
+               (displayln
+                (format "% Consumer reached end of ~a [~a] message queue at offset ~a"
+                        topic-name partition offset))
+               #;(displayln (format "% ~a" (rd-kafka-message-errstr msg))) ;; gets you HWM
+               (when (exit-eof)
+                 (set! wait-eof (sub1 wait-eof))
+                 (when (zero? wait-eof)
+                   (displayln "% All partition(s) reached EOF: exiting")
+                   (shutdown!))))))]
+      [err
        (begin
-         (displayln
-          (format "% Consumer reached end of ~a [~a] message queue at offset ~a"
-                  topic-name partition offset))
-         (when (exit-eof)
-           (set! wait-eof (sub1 wait-eof))
-           (when (zero? wait-eof)
-             (displayln "% All partition(s) reached EOF: exiting")
-             (shutdown!))))]
-
-      [else
-       (begin
-         (if (not (ptr-equal? topic #f))
+         (if topic
              (displayln
               (format "% Consume error for topic ~s [~a] offset ~a: ~a"
-                      topic-name partition offset
+                      (rd-kafka-topic-name topic)
+                      (rd-kafka-message-partition msg)
+                      (rd-kafka-message-offset msg)
                       (rd-kafka-message-errstr msg)))
              (displayln
-              (format "% Consumer error: ~a: ~a"
+              (format "% 3 Consumer error: ~a: ~a"
                       (rd-kafka-err2str err)
                       (rd-kafka-message-errstr msg)))))])))
 
@@ -327,12 +330,12 @@
              (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
                (display-error-exit "Failed to start consuming topics" err)))))
 
-     (let loop ([msg (rd-kafka-consumer-poll client 200)])
+     (let loop ([msg (rd-kafka-consumer-poll client 500)])
        (unless (ptr-equal? msg #f)
          (message-consume msg)
          (rd-kafka-message-destroy msg))
        (when (running?)
-         (loop (rd-kafka-consumer-poll client 200))))
+         (loop (rd-kafka-consumer-poll client 500))))
 
      (displayln "% Shutting down")
 
