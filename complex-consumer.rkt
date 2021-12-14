@@ -29,7 +29,8 @@
 
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      (vector "-A" "-q" "-X" "partition.assignment.strategy=cooperative-sticky" "-g" "xoxo13" "transactions")
+      #;(vector "-A" "-q" "-X" "partition.assignment.strategy=cooperative-sticky" "-g" "xoxo13" "transactions")
+      (vector)
       (current-command-line-arguments)))
 
 (define group-id (make-parameter #f))
