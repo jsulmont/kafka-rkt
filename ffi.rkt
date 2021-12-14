@@ -56,6 +56,7 @@
 ;;; bunch of opaque types
 (define _rd-kafka-pointer (_cpointer 'rd-kafka))
 (define _rd-kafka-topic-pointer (_cpointer 'rd-kafka-topic))
+(define _rd-kafka-topic-pointer/null (_cpointer/null 'rd-kafka-topic))
 (define _rd-kafka-conf-pointer (_cpointer 'rd-kafka-conf))
 (define _rd-kafka-topic-conf-pointer (_cpointer 'rd-kafka-topic-conf))
 (define _rd-kafka-queue-pointer (_cpointer 'rd-kafka-queue))
@@ -148,7 +149,7 @@
 
 (define-cstruct _rd-kafka-message
   ([err _rd-kafka-resp-err]
-   [rkt _rd-kafka-topic-pointer]
+   [rkt _rd-kafka-topic-pointer/null]
    [partition _int32]
    [payload _bytes]
    [len _size]
@@ -670,7 +671,7 @@
 
 ;;;; TOPICS
 (define-rdkafka rd-kafka-topic-name
-  (_fun _rd-kafka-topic-pointer -> _string))
+  (_fun _rd-kafka-topic-pointer/null -> _string))
 
 (provide rd-kafka-topic-name)
 
