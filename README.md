@@ -15,6 +15,8 @@ $ raco pkg install --skip-installed try-catch-finally uuid unix-signals threadin
 
 ```
 
+* Assuming `librdkafka` is [installed on your machine](https://github.com/edenhill/librdkafka#installation),
+
 * Assuming there is a Kafka broker listening on `localhost:9092`, a `transactions` topic created with more than one partition (say 5), and [Kafka Connect Datagen ](https://github.com/confluentinc/kafka-connect-datagen) is installed, so that it's running the `transactions` [connector](https://github.com/confluentinc/kafka-connect-datagen/blob/master/config/connector_transactions.config) where `max.interval` is 5000 ms, then:
 
 ```Shell
