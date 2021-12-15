@@ -1,4 +1,4 @@
-rdkafka - Racket binding to Apache Kafka
+A Racket interface to Apache Kafka
 =======
 
 # TL;DR
