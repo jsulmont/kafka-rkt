@@ -34,7 +34,7 @@ Hitting `^C` (or sending `SINGINT` to the process) will cleanly shutdown the con
 racket complex-consumer.rkt -A -X partition.assignment.strategy=cooperative-sticky -g xoxo13 transactions
 ```
 
-your process will correctly join `xoxo13` group using a `COOPERATIVE` protocol, triggering a rebalancing of the group by the broker: after a while, each processes will handle a subset of `transactions`' partition complement of the other's.
+your process will correctly join `xoxo13` group using a `COOPERATIVE` protocol, triggering a rebalancing of the group by the broker: after a while, each process will handle a subset of `transactions`' partition complement of the other's.
 
 
 Note that the `-X` and `-d`  options can be repeated. For a list of all global parameters and their values:
