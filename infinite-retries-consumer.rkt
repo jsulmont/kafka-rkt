@@ -119,7 +119,7 @@
               duration (rd-kafka-message-partition message))
       (sleep duration)
       (when (< (random 100) (error-rate))
-        (displayln "💥💥")
+        (eprintf "💥💥💥💥💥💥")
         (raise "% Call to external system failed")))))
 
 ;; TODO rewrite
@@ -182,22 +182,15 @@
              (begin 
                (let ([key-len (rd-kafka-message-key-len msg)]
                      [len (rd-kafka-message-len msg)])
-                 (when (verbose)
-                   (displayln (format "% Message (topic ~s [~a] offset ~a, ~a bytes)"
-                                      topic-name partition offset len)))
                  (when (positive? key-len)
-                   (displayln (format "Key: ~a" ;; TODO -A (hexdump)
-                                      (~> (rd-kafka-message-key msg)
-                                          (bytes->string/latin-1 #f 0 key-len)))))
-                 (displayln (format "~a"
-                                    (~> (rd-kafka-message-payload msg)
-                                        (bytes->string/latin-1 #f 0 len))))))
+                   (display (format "~a  " (~> (rd-kafka-message-key msg)
+                                               (bytes->string/latin-1 #f 0 key-len)))))
+                 (displayln (format "~a" (~> (rd-kafka-message-payload msg)
+                                             (bytes->string/latin-1 #f 0 len))))))
              (begin
                (displayln
                 (format "% Consumer reached end of ~a [~a] message queue at offset ~a"
-                        topic-name partition offset))
-               #;(displayln (format "% ~a" (rd-kafka-message-errstr msg))) ;; gets you HWM
-               )))]
+                        topic-name partition offset)))))]
       [err
        (begin
          (if topic
@@ -232,13 +225,24 @@
    #:args (topic)
    (list topic)))
 
+(define (consumer-poll client timeout [max-records 10])
+  (let pool ([batch '()] [left timeout])
+    #;(printf "consumer-poll: left ~a, batch ~a\n" left batch )
+    (let ([t1 (current-milliseconds)]
+          [msg (rd-kafka-consumer-poll client left)])
+      (if (not msg) batch
+          (let ([batch* (cons msg batch)])
+            (if (< (length batch*) max-records)
+                (pool batch* (- (current-milliseconds) t1))
+                batch*))))))
+
 (try
  (let* ([errstr-len 256]
         [errstr (make-bytes errstr-len)]
         [table  (~> #hash()
                     (dict-set "log.queue" "true")
                     (dict-set "enable.partition.eof" "true")
-                    ;(dict-set "max.poll.interval.ms" "10000")
+                    ;(dict-set "max.poll.interval.ms" "10000") ;; nope
                     (dict-set "bootstrap.servers" (brokers))
                     (dict-set "group.id" (or (group-id) "infinite-retries-consumer")))]
         [table (if (null? (debug-flags))
@@ -281,12 +285,13 @@
        (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
          (display-error-exit "Failed to start consuming topics" err)))
 
-     (let loop ([msg (rd-kafka-consumer-poll client 500)])
-       (unless (ptr-equal? msg #f)
-         (message-consume msg)
-         (rd-kafka-message-destroy msg))
+     (let loop ([msgs (consumer-poll client 1000)]) 
+       (unless (empty? msgs)
+         (map message-consume (reverse msgs))
+         (map rd-kafka-message-destroy msgs)
+        )
        (when (running?)
-         (loop (rd-kafka-consumer-poll client 500))))
+         (loop (consumer-poll client 1000))))
 
      (displayln "% Shutting down")
 
