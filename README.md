@@ -3,9 +3,11 @@ A Racket interface to Apache Kafka
 
 # TL;DR
 
-* [Racket](https://racket-lang.org/) library to access[ Apache Kafka](https://kafka.apache.org/), using [librdkafka](https://github.com/edenhill/librdkafka).
+* A [Racket](https://racket-lang.org/) library to access[ Apache Kafka](https://kafka.apache.org/), using [librdkafka](https://github.com/edenhill/librdkafka).
 * For now, just a low level access is provided (closely mapping the [C API of librdkafka](https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafka_8h.html)).
-* Next step will be to provied a pure Scheme/Racket interface.
+* Next step will be a Racket idiomatic library, perhaps inspired by the excellent [jackdaw](https://github.com/FundingCircle/jackdaw).
+* Consider a R7RS low level library and see how it plays with [Gambit Scheme](https://github.com/gambit/gambit) (transpiling from Scheme to C).
+* Finally explore coding directly against [Kafka protocol](https://kafka.apache.org/protocol) (i.e., no `librdkafka`).
 
 ## How to run
 * Assuming [you have Racket on your machine](https://download.racket-lang.org/), and have installed the following Racket packages:
@@ -86,10 +88,12 @@ usage: complex-consumer [ <option> ... ] <topic> [<topics>] ...
 
 ## Caveat
 
-1. It is currently **not possible** to set a `log` callback as doing so will cause a deadlock. `librdkafka` is heavily treaded and the log callback is called from all threads, often holding locks.  
+* It is currently **not possible** to set a `log` callback as doing so will cause a deadlock. `librdkafka` is heavily treaded and the log callback is called from all threads, often holding locks.  
 	* hence `rd_kafka_conf_set_log_cb` is simply not exposed.
 	* the workaround, is route all logging to a dedicated queue using `rd_kafka_set_log_queue` and set a thread to [periodically poll that queue](https://github.com/jsulmont/rdkafka/blob/main/complex-consumer.rkt#L300-L317).
 * Ideally `librdkafka` library should be lifted to its own system thread (aka [place](https://docs.racket-lang.org/reference/places.html) in Racket parlance) and run under a dedicated [custodian](https://docs.racket-lang.org/reference/eval-model.html#%28part._custodian-model%29). Now I know, and this will probably happen at some time.
+* It is currently not possible to run a stand-alone executable (created with `raco exe`). This is due to a problem with the [unix signals](https://github.com/tonyg/racket-unix-signals) library.
+
 	
 # Background
 
