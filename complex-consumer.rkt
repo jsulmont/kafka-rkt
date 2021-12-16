@@ -305,7 +305,7 @@
      (let* ([logger (λ (client level fac msg)
                       (displayln (format "~a RDKAFKA-~a-~a: ~a: ~a "
                                          (/ (current-inexact-milliseconds) 1000)
-                                         level fac (rd-kafka-name client) msg)))]
+                                         level fac (rd-kafka-memberid client) msg)))]
             [logger-thunk (λ ()
                             (let loop ([evt (rd-kafka-queue-poll log-queue 200)])
                               (unless (equal? evt #f)
