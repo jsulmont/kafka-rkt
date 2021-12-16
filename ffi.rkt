@@ -442,7 +442,8 @@
  rd-kafka-name
  rd-kafka-type
  rd-kafka-destroy
- rd-kafka-memberid)
+ rd-kafka-memberid
+ rd-kafka-mem-free)
 
 (define RD-KAFKA-MESG-F-FREE #x1)
 (define RD-KAFKA-MESG-F-COPY #x2)
