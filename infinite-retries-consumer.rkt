@@ -36,7 +36,7 @@
 (define group-id (make-parameter #f))
 (define brokers (make-parameter "localhost:9092"))
 (define error-rate (make-parameter 10))
-(define verbose (make-parameter #t))
+(define verbose (make-parameter #f))
 (define properties (make-parameter (list)))
 (define debug-flags (make-parameter (list)))
 (define dump-conf (make-parameter #f))
@@ -119,7 +119,7 @@
               duration (rd-kafka-message-partition message))
       (sleep duration)
       (when (< (random 100) (error-rate))
-        (eprintf "💥💥💥💥💥💥")
+        (eprintf "💥💥")
         (raise "% Call to external system failed")))))
 
 ;; TODO rewrite
@@ -171,46 +171,25 @@
     topics))
 
 (define (message-consume msg)
-  (let* ([err (rd-kafka-message-err msg)]
-         [topic (rd-kafka-message-rkt msg)])
-    (match err
-      [(or 'RD_KAFKA_RESP_ERR_NO_ERROR 'RD_KAFKA_RESP_ERR__PARTITION_EOF)
-       (let ([topic-name (rd-kafka-topic-name topic)]
-             [offset (rd-kafka-message-offset msg)]
-             [partition (rd-kafka-message-partition msg)])
-         (if (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
-             (begin 
-               (let ([key-len (rd-kafka-message-key-len msg)]
-                     [len (rd-kafka-message-len msg)])
-                 (when (positive? key-len)
-                   (display (format "~a  " (~> (rd-kafka-message-key msg)
-                                               (bytes->string/latin-1 #f 0 key-len)))))
-                 (displayln (format "~a" (~> (rd-kafka-message-payload msg)
-                                             (bytes->string/latin-1 #f 0 len))))))
-             (begin
-               (displayln
-                (format "% Consumer reached end of ~a [~a] message queue at offset ~a"
-                        topic-name partition offset)))))]
-      [err
-       (begin
-         (if topic
-             (displayln
-              (format "% Consume error for topic ~s [~a] offset ~a: ~a"
-                      (rd-kafka-topic-name topic)
-                      (rd-kafka-message-partition msg)
-                      (rd-kafka-message-offset msg)
-                      (rd-kafka-message-errstr msg)))
-             (displayln
-              (format "% 3 Consumer error: ~A"
-                      (rd-kafka-err2str err)
-                      (rd-kafka-message-errstr msg)))))])))
+  (let* ([topic (rd-kafka-message-rkt msg)]
+         [topic-name (rd-kafka-topic-name topic)]
+         [offset (rd-kafka-message-offset msg)]
+         [partition (rd-kafka-message-partition msg)]
+         [key-len (rd-kafka-message-key-len msg)]
+         [len (rd-kafka-message-len msg)])
+
+    (when (positive? key-len)
+      (display (format "~a  " (~> (rd-kafka-message-key msg)
+                                  (bytes->string/latin-1 #f 0 key-len)))))
+    (displayln (format "~a" (~> (rd-kafka-message-payload msg)
+                                (bytes->string/latin-1 #f 0 len))))))
 
 (define topic-list
   (command-line
    #:program "infinite-retries-consumer"
    #:argv argument-vec
    #:once-each ["-g" g "Consumer group. ((null))" (group-id g)]
-   ["-q" "Be quiet." (verbose #f)]
+   ["-v" "Be verbose." (verbose #t)]
    ["-b" b "Broker address. (localhost:9092)" (brokers b)]
    ["-e" e "Error rate %. (10%)" (error-rate e)]
    #:multi
@@ -228,13 +207,15 @@
 (define (consumer-poll client timeout [max-records 10])
   (let pool ([batch '()] [left timeout])
     #;(printf "consumer-poll: left ~a, batch ~a\n" left batch )
-    (let ([t1 (current-milliseconds)]
-          [msg (rd-kafka-consumer-poll client left)])
+    (let* ([t1 (current-milliseconds)]
+           [msg (rd-kafka-consumer-poll client left)]
+           [left* (- left (- (current-milliseconds) t1))])
       (if (not msg) batch
           (let ([batch* (cons msg batch)])
-            (if (< (length batch*) max-records)
-                (pool batch* (- (current-milliseconds) t1))
+            (if (and (positive? left*) (< (length batch*) max-records))
+                (pool batch* left*)
                 batch*))))))
+
 
 (try
  (let* ([errstr-len 256]
@@ -285,11 +266,11 @@
        (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
          (display-error-exit "Failed to start consuming topics" err)))
 
-     (let loop ([msgs (consumer-poll client 1000)]) 
-       (unless (empty? msgs)
-         (map message-consume (reverse msgs))
-         (map rd-kafka-message-destroy msgs)
-        )
+     (let loop ([msgs (consumer-poll client 1000)])
+       (let ([msgs (filter (λ (m) (equal? (rd-kafka-message-err m)  'RD_KAFKA_RESP_ERR_NO_ERROR)) msgs)])
+         (unless (empty? msgs)
+           (map message-consume (reverse msgs))
+           (map rd-kafka-message-destroy msgs)))
        (when (running?)
          (loop (consumer-poll client 1000))))
 

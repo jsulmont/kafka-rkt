@@ -14,8 +14,8 @@
   (ffi-lib "librdkafka" '("1" #f)
            #:get-lib-dirs
            (λ ()
-             (cons (string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
-                   #;(string->path "/Users/jsulmont/dev/rdkafka")
+             (cons #;(string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
+                   (string->path "/Users/jsulmont/dev/rdkafka")
                    (get-lib-search-dirs)))))
 
 (define-ffi-definer define-rdkafka
@@ -437,12 +437,20 @@
              (rd-kafka-mem-free p m)
              s)))
 
+(define-rdkafka rd-kafka-clusterid
+  (_fun (p : _rd-kafka-pointer) _int
+        -> (m : _pointer)
+        -> (let ([s (cast m _pointer _string)])
+             (rd-kafka-mem-free p m)
+             s)))
+
 (provide
  rd-kafka-new
  rd-kafka-name
  rd-kafka-type
  rd-kafka-destroy
  rd-kafka-memberid
+ rd-kafka-clusterid
  rd-kafka-mem-free)
 
 (define RD-KAFKA-MESG-F-FREE #x1)
@@ -564,12 +572,12 @@
 ;;
 (define-rdkafka rd-kafka-topic-partition-list-destroy
   (_fun _rd-kafka-topic-partition-list-pointer -> _void)
-  #:wrap (deallocator)
+  ;#:wrap (deallocator)
   )
 
 (define-rdkafka rd-kafka-topic-partition-list-new
   (_fun _int -> _rd-kafka-topic-partition-list-pointer)
-  #:wrap (allocator  rd-kafka-topic-partition-list-destroy)
+  ;#:wrap (allocator  rd-kafka-topic-partition-list-destroy)
   )
 
 (define-rdkafka rd-kafka-topic-partition-list-add
