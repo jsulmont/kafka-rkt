@@ -111,6 +111,16 @@
                   (rd-kafka-topic-partition-partition p)
                   (rd-kafka-topic-partition-offset p)))))))
 
+; Racket:
+(define (partition/callback p? lst k)
+  (match lst
+    ['() (k '() '())]
+    [(cons hd tl)
+     (partition/callback p? tl (λ (ins outs)
+                                 (if (p? hd)
+                                     (k (cons hd ins) outs)
+                                     (k ins (cons hd outs)))))]))
+
 
 (define (external-system message)
   (unless (ptr-equal? message #f)
@@ -225,6 +235,7 @@
                     (dict-set "enable.partition.eof" "true")
                     ;(dict-set "max.poll.interval.ms" "10000") ;; nope
                     (dict-set "bootstrap.servers" (brokers))
+                    (dict-set "internal.termination.signal" (format "~a" (lookup-signal-number 'SIGIO)))
                     (dict-set "group.id" (or (group-id) "infinite-retries-consumer")))]
         [table (if (null? (debug-flags))
                    table
@@ -259,22 +270,30 @@
        (set! log-thread (thread logger-thunk))))
 
    (let* ([topics (make-partition-list topic-list)])
-     (displayln (format "% Subscribing to ~a topics"
-                        (rd-kafka-topic-partition-list-cnt topics)))
+     (printf "% Subscribing to ~a topics"
+             (rd-kafka-topic-partition-list-cnt topics))
 
      (let ([err (rd-kafka-subscribe client topics)])
        (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
          (display-error-exit "Failed to start consuming topics" err)))
 
      (let loop ([msgs (consumer-poll client 1000)])
-       (let ([msgs (filter (λ (m) (equal? (rd-kafka-message-err m)  'RD_KAFKA_RESP_ERR_NO_ERROR)) msgs)])
+       (let ([msgs* (filter (λ (m) (equal? (rd-kafka-message-err m)  'RD_KAFKA_RESP_ERR_NO_ERROR)) msgs)])
          (unless (empty? msgs)
-           (map message-consume (reverse msgs))
+           (map message-consume (reverse msgs*))
            (map rd-kafka-message-destroy msgs)))
        (when (running?)
          (loop (consumer-poll client 1000))))
 
      (displayln "% Shutting down")
+
+     (rd-kafka-topic-partition-list-destroy topics)
+     (displayln "% Partition list destroyed")
+
+     (unless (null? (debug-flags))
+       (kill-thread log-thread)
+       (rd-kafka-queue-destroy log-queue)
+       (displayln "% log-queue destroyed"))
 
      (match (rd-kafka-consumer-close client)
        ['RD_KAFKA_RESP_ERR_NO_ERROR  (displayln "% Consumer closed")]
