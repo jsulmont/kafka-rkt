@@ -121,17 +121,6 @@
                                      (k (cons hd ins) outs)
                                      (k ins (cons hd outs)))))]))
 
-
-(define (external-system message)
-  (unless (ptr-equal? message #f)
-    (let ([duration (/ (random 1000) 1000.0)])
-      (printf "% Simulating a call to an external system (~s) for message ~a "
-              duration (rd-kafka-message-partition message))
-      (sleep duration)
-      (when (< (random 100) (error-rate))
-        (eprintf "💥💥")
-        (raise "% Call to external system failed")))))
-
 ;; TODO rewrite
 (define (rebalance-cb client err partitions _)
   (display "% Consumer group rebalanced: ")
@@ -140,18 +129,18 @@
 
     (match err
       ['RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS
-       (displayln (format "assigned (~a): ~s"
-                          (rd-kafka-rebalance-protocol client)
-                          (format-topar-list partitions)))
+       (printf "% Partition assigned (~a): ~s\n"
+               (rd-kafka-rebalance-protocol client)
+               (format-topar-list partitions))
        (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
            (set! error (rd-kafka-incremental-assign client partitions))
            (set! ret-err (rd-kafka-assign client partitions)))
        (set! wait-eof (+ wait-eof (rd-kafka-topic-partition-list-cnt partitions)))]
 
       ['RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS
-       (displayln (format "revoked  (~a): ~s"
-                          (rd-kafka-rebalance-protocol client)
-                          (format-topar-list partitions)))
+       (printf "% Partition revoked  (~a): ~s\n"
+               (rd-kafka-rebalance-protocol client)
+               (format-topar-list partitions))
        (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
            (begin
              (set! error (rd-kafka-incremental-unassign client partitions))
@@ -164,11 +153,11 @@
          (rd-kafka-assign client #f)])
 
     (when error ;; error object
-      (displayln (format "% incremental assign failure: ~a" (rd-kafka-error-string error)))
+      (eprintf "% incremental assign failure: ~a\n" (rd-kafka-error-string error))
       (rd-kafka-error-destroy error))
 
     (unless (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR) ;; versus enum
-      (displayln (format "% assign failure: ~a" (rd-kafka-err2str ret-err))))))
+      (eprintf "% assign failure: ~a\n" (rd-kafka-err2str ret-err)))))
 
 (define (make-partition-list lst)
   (let ([topics (rd-kafka-topic-partition-list-new (length lst))])
@@ -180,19 +169,28 @@
         (rd-kafka-topic-partition-list-add topics (car seq) partition)))
     topics))
 
+
+(define (external-system msg)
+  (unless (ptr-equal? msg #f)
+    (let* ([duration (/ (random 1000) 1000.0)]
+           [topic (rd-kafka-message-rkt msg)]
+           [topic-name (rd-kafka-topic-name topic)]
+           [offset (rd-kafka-message-offset msg)]
+           [p (rd-kafka-message-partition msg)])
+      (printf "Simulating a ~a ms call to an external system for message ~a[~a]/~a\n"
+              duration topic-name p offset)
+      (sleep duration)
+      (when (< (random 100) (error-rate))
+        (raise "💥💥 Call to external system failed!")))))
+
 (define (message-consume msg)
-  (let* ([topic (rd-kafka-message-rkt msg)]
-         [topic-name (rd-kafka-topic-name topic)]
-         [offset (rd-kafka-message-offset msg)]
-         [partition (rd-kafka-message-partition msg)]
-         [key-len (rd-kafka-message-key-len msg)]
+  (let* ([key-len (rd-kafka-message-key-len msg)]
          [len (rd-kafka-message-len msg)])
 
     (when (positive? key-len)
       (display (format "~a  " (~> (rd-kafka-message-key msg)
                                   (bytes->string/latin-1 #f 0 key-len)))))
-    (displayln (format "~a" (~> (rd-kafka-message-payload msg)
-                                (bytes->string/latin-1 #f 0 len))))))
+    (external-system msg)))
 
 (define topic-list
   (command-line
@@ -214,18 +212,31 @@
    #:args (topic)
    (list topic)))
 
-(define (consumer-poll client timeout [max-records 10])
-  (let pool ([batch '()] [left timeout])
-    #;(printf "consumer-poll: left ~a, batch ~a\n" left batch )
+(define (consume/batch client timeout [batch-size 10])
+  (let pool ([batch '()] [left-timeout timeout])
     (let* ([t1 (current-milliseconds)]
-           [msg (rd-kafka-consumer-poll client left)]
-           [left* (- left (- (current-milliseconds) t1))])
-      (if (not msg) batch
-          (let ([batch* (cons msg batch)])
-            (if (and (positive? left*) (< (length batch*) max-records))
-                (pool batch* left*)
-                batch*))))))
-
+           [msg (rd-kafka-consumer-poll client left-timeout)]
+           [left-timeout* (- left-timeout (- (current-milliseconds) t1))])
+      (if (not msg)
+          batch
+          (let ([err (rd-kafka-message-err msg)])
+            (case err
+              ['RD_KAFKA_RESP_ERR_NO_ERROR
+               (let ([batch* (cons msg batch)])
+                 (if (and (positive? left-timeout*)
+                          (< (length batch*) batch-size))
+                     (pool batch* left-timeout*)
+                     batch*))]
+              [else
+               (begin
+                 (rd-kafka-message-destroy msg)
+                 (if (equal? err 'RD_KAFKA_RESP_ERR__PARTITION_EOF)
+                   (if (positive? left-timeout)
+                       (pool batch left-timeout)
+                       batch)
+                   (begin
+                     (eprintf "% Consumer error: ~a\n" (rd-kafka-err2str err))
+                     (shutdown!))))]))))))
 
 (try
  (let* ([errstr-len 256]
@@ -277,13 +288,21 @@
        (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
          (display-error-exit "Failed to start consuming topics" err)))
 
-     (let loop ([msgs (consumer-poll client 1000)])
-       (let ([msgs* (filter (λ (m) (equal? (rd-kafka-message-err m)  'RD_KAFKA_RESP_ERR_NO_ERROR)) msgs)])
-         (unless (empty? msgs)
-           (map message-consume (reverse msgs*))
-           (map rd-kafka-message-destroy msgs)))
+     (match/values (rd-kafka-subscription client)
+       [('RD_KAFKA_RESP_ERR_NO_ERROR partitions)
+        (printf "\nHAPPY ~a\n"  (format-topar-list partitions))]
+       [(err _) (eprintf "ERROR ~a\n" (rd-kafka-err2str err))])
+
+     
+     (let loop ([msgs (consume/batch client 1000)])
+       (unless (empty? msgs)
+         (try
+          (map message-consume (reverse msgs))
+          (catch (string? e)
+            (eprintf "~a\n" e)))
+         (map rd-kafka-message-destroy msgs))
        (when (running?)
-         (loop (consumer-poll client 1000))))
+         (loop (consume/batch client 1000))))
 
      (displayln "% Shutting down")
 
@@ -307,7 +326,6 @@
        (unless (or (zero? run) (zero? rc))
          (displayln "Waiting for librdkafka to decommission")
          (loop (sub1 run) (rd-kafka-wait-destroyed 1000))))))
-
 
  (catch
      (string? e) (displayln (format "% string ~a" e))))
