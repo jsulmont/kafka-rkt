@@ -14,8 +14,8 @@
   (ffi-lib "librdkafka" '("1" #f)
            #:get-lib-dirs
            (λ ()
-             (cons #;(string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
-                   (string->path "/Users/jsulmont/dev/rdkafka")
+             (cons (string->path "/usr/local/Cellar/librdkafka/1.8.2/lib/")
+                   #;(string->path "/Users/jsulmont/dev/rdkafka")
                    (get-lib-search-dirs)))))
 
 (define-ffi-definer define-rdkafka
@@ -635,12 +635,19 @@
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer/null
         -> _rd-kafka-resp-err))
 
-#;(define-rdkafka rd-kafka-assignment
-    (_fun _rd-kafka-pointer
-        _rd-kafka-topic-partition-list-pointer
-        -> _rd-kafka-resp-err<))
-
 (define-rdkafka rd-kafka-assignment
+  (_fun _rd-kafka-pointer
+        (pl : (_ptr o _rd-kafka-topic-partition-list-pointer))
+        -> (e : _rd-kafka-resp-err)
+        -> (values e pl)))
+
+(define-rdkafka rd-kafka-position
+  (_fun _rd-kafka-pointer
+        (pl : (_ptr o _rd-kafka-topic-partition-list-pointer))
+        -> (e : _rd-kafka-resp-err)
+        -> (values e pl)))
+
+(define-rdkafka rd-kafka-subscription
   (_fun _rd-kafka-pointer
         (pl : (_ptr o _rd-kafka-topic-partition-list-pointer))
         -> (e : _rd-kafka-resp-err)
@@ -658,6 +665,10 @@
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer
         -> _rd-kafka-resp-err))
 
+(define-rdkafka rd-kafka-unsubscribe
+  (_fun _rd-kafka-pointer
+        -> _rd-kafka-resp-err))
+
 (define-rdkafka rd-kafka-consumer-poll
   (_fun _rd-kafka-pointer _int
         -> _rd-kafka-message-pointer/null))
@@ -670,8 +681,11 @@
  rd-kafka-poll-set-consumer
  RD_KAFKA_PARTITION_UA
  rd-kafka-subscribe
+ rd-kafka-unsubscribe
  rd-kafka-assign
  rd-kafka-assignment
+ rd-kafka-position
+ rd-kafka-subscription
  rd-kafka-incremental-assign
  rd-kafka-incremental-unassign
  rd-kafka-rebalance-protocol
