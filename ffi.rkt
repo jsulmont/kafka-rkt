@@ -635,17 +635,22 @@
   (_fun _rd-kafka-pointer _rd-kafka-topic-partition-list-pointer/null
         -> _rd-kafka-resp-err))
 
+(define-rdkafka rd-kafka-committed
+  (_fun _rd-kafka-pointer
+        _rd-kafka-topic-partition-list-pointer
+        _int
+        -> _rd-kafka-resp-err))
+
 (define-rdkafka rd-kafka-assignment
   (_fun _rd-kafka-pointer
-        (pl : (_ptr o _rd-kafka-topic-partition-list-pointer))
+        (pl : (_ptr o _rd-kafka-topic-partition-list-pointer/null))
         -> (e : _rd-kafka-resp-err)
         -> (values e pl)))
 
 (define-rdkafka rd-kafka-position
   (_fun _rd-kafka-pointer
-        (pl : (_ptr o _rd-kafka-topic-partition-list-pointer))
-        -> (e : _rd-kafka-resp-err)
-        -> (values e pl)))
+        _rd-kafka-topic-partition-list-pointer
+        -> _rd-kafka-resp-err))
 
 (define-rdkafka rd-kafka-subscription
   (_fun _rd-kafka-pointer
@@ -683,6 +688,7 @@
  rd-kafka-subscribe
  rd-kafka-unsubscribe
  rd-kafka-assign
+ rd-kafka-committed
  rd-kafka-assignment
  rd-kafka-position
  rd-kafka-subscription
