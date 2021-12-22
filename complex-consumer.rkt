@@ -37,7 +37,7 @@
 (define brokers (make-parameter "localhost:9092"))
 (define verbose (make-parameter #t))
 (define describe-group (make-parameter #f))
-(define committed-offsets (make-parameter #f))
+(define query-offsets (make-parameter #f))
 (define raw-output (make-parameter #f))
 (define properties (make-parameter (list)))
 (define debug-flags (make-parameter (list)))
@@ -140,12 +140,18 @@
   (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
     (if (zero? partition-cnt) '()
         (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
-             [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
-        (for/list ([p partition-lst])
-          (format "~a [~a] offset ~a"
-                  (rd-kafka-topic-partition-topic p)
-                  (rd-kafka-topic-partition-partition p)
-                  (rd-kafka-topic-partition-offset p)))))))
+               [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
+          (for/list ([p partition-lst])
+            (match (rd-kafka-topic-partition-err p)
+              ['RD_KAFKA_RESP_ERR_NO_ERROR
+               (format "~a [~a] offset ~a"
+                       (rd-kafka-topic-partition-topic p)
+                       (rd-kafka-topic-partition-partition p)
+                       (rd-kafka-topic-partition-offset p))]
+              [err (format "~a [~a] error ~a"
+                           (rd-kafka-topic-partition-topic p)
+                           (rd-kafka-topic-partition-partition p)
+                           (rd-kafka-err2str p))]))))))
 
 #;(define format-date
     (match-lambda
@@ -258,7 +264,7 @@
    ["-b" b "Broker address. (localhost:9092)" (brokers b)]
    ["-e" "Exit consumer when last message ∈ partition has been received." (exit-eof #t)]
    ["-D" "Describe group." (describe-group #t)]
-   ["-O" "Get committed offset(s)." (committed-offsets #t)]
+   ["-O" "Get committed offset(s)." (query-offsets #t)]
    ["-A" "Raw payload output (consumer)." (raw-output #t)]
    #:multi
    ["-d" flag
@@ -317,26 +323,33 @@
        (set! log-thread (thread logger-thunk))))
 
    (let* ([topics (make-partition-list topic-list)])
-     (if (subscription?)
-         (begin
-           (displayln (format "% Subscribing to ~a topics"
-                              (rd-kafka-topic-partition-list-cnt topics)))
-           (let ([err (rd-kafka-subscribe client topics)])
-             (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
-               (display-error-exit "Failed to start consuming topics" err))))
-         (begin
-           (displayln (format "% Assigning ~a partitions"
-                              (rd-kafka-topic-partition-list-cnt topics)))
-           (let ([err (rd-kafka-assign client topics)])
-             (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
-               (display-error-exit "Failed to start consuming topics" err)))))
+     (if (query-offsets)
+         (match (rd-kafka-committed client topics 5000)
+           ['RD_KAFKA_RESP_ERR_NO_ERROR
+            (printf "committed: ~a\n" (format-topar-list topics)) ]
+           [e (begin (eprintf "% Failed to fetch offsets: ~a\n" (rd-kafka-err2str e)) (exit 1))])
 
-     (let loop ([msg (rd-kafka-consumer-poll client 500)])
-       (unless (ptr-equal? msg #f)
-         (message-consume msg)
-         (rd-kafka-message-destroy msg))
-       (when (running?)
-         (loop (rd-kafka-consumer-poll client 500))))
+         (begin
+           (if (subscription?)
+               (begin
+                 (displayln (format "% Subscribing to ~a topics"
+                                    (rd-kafka-topic-partition-list-cnt topics)))
+                 (let ([err (rd-kafka-subscribe client topics)])
+                   (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
+                     (display-error-exit "Failed to start consuming topics" err))))
+               (begin
+                 (displayln (format "% Assigning ~a partitions"
+                                    (rd-kafka-topic-partition-list-cnt topics)))
+                 (let ([err (rd-kafka-assign client topics)])
+                   (unless (equal? err  'RD_KAFKA_RESP_ERR_NO_ERROR)
+                     (display-error-exit "Failed to start consuming topics" err)))))
+
+           (let loop ([msg (rd-kafka-consumer-poll client 500)])
+             (unless (ptr-equal? msg #f)
+               (message-consume msg)
+               (rd-kafka-message-destroy msg))
+             (when (running?)
+               (loop (rd-kafka-consumer-poll client 500))))))
 
      (displayln "% Shutting down")
 
@@ -353,7 +366,6 @@
          (displayln "Waiting for librdkafka to decommission")
          (loop (sub1 run) (rd-kafka-wait-destroyed 1000))))))
 
-
  (catch
      (string? e) (displayln (format "% string ~a" e))))
 
@@ -364,7 +376,7 @@
     (displayln (format "%\tbrokers = ~a" (brokers)))
     (displayln (format "%\texit-eof = ~a" (exit-eof)))
     (displayln (format "%\tverbose = ~a" (verbose)))
-    (displayln (format "%\tcommitted-offsets = ~a" (committed-offsets)))
+    (displayln (format "%\tcommitted-offsets = ~a" (query-offsets)))
     (displayln (format "%\traw-output = ~a" (raw-output)))
     (displayln (format "%\tproperties = ~a" (properties)))
     (displayln (format "%\tdebug-flags = ~a" (debug-flags)))
