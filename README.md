@@ -1,6 +1,9 @@
 A Racket interface to Apache Kafka
 =======
 
+# Disclaimer
+This project is a work in progress. Not to be used, or at your own risk.
+
 # TL;DR
 
 * A [Racket](https://racket-lang.org/) library to access[ Apache Kafka](https://kafka.apache.org/), using [librdkafka](https://github.com/edenhill/librdkafka).
