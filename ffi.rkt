@@ -472,6 +472,13 @@
 (define RD-KAFKA-MESG-F-BLOCK #x4)
 (define RD-KAFKA-MESG-F-PARTITION #x8)
 
+(define-values
+  (RD_KAFKA_OFFSET_BEGINNING
+   RD_KAFKA_OFFSET_END
+   RD_KAFKA_OFFSET_STORED
+   RD_KAFKA_OFFSET_INVALID)
+  (values -2 -1 -1000 -1001))
+
 (define-rdkafka rd-kafka-produce
   (_fun _rd-kafka-pointer _int32 _int _pointer _size _pointer _size _pointer
         -> _rd-kafka-resp-err))
@@ -569,10 +576,14 @@
   (_fun _rd-kafka-pointer _int -> _rd-kafka-resp-err))
 
 (provide
- RD-KAFKA-MESG-F-FREE
+ RD-KAFKA-MESG-F-FREE ;; TODO consistency!
  RD-KAFKA-MESG-F-COPY
  RD-KAFKA-MESG-F-BLOCK
  RD-KAFKA-MESG-F-PARTITION
+ RD_KAFKA_OFFSET_BEGINNING
+ RD_KAFKA_OFFSET_END
+ RD_KAFKA_OFFSET_STORED
+ RD_KAFKA_OFFSET_INVALID
  rd-kafka-produce
  rd-kafka-producev
  rd-kafka-produce-batch
