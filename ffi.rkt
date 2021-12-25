@@ -6,7 +6,6 @@
  threading
  setup/dirs
  ffi/unsafe
- ffi/unsafe/alloc
  ffi/unsafe/define
  ffi/unsafe/define/conventions)
 
@@ -59,6 +58,7 @@
 (define _rd-kafka-topic-pointer/null (_cpointer/null 'rd-kafka-topic))
 (define _rd-kafka-conf-pointer (_cpointer 'rd-kafka-conf))
 (define _rd-kafka-topic-conf-pointer (_cpointer 'rd-kafka-topic-conf))
+(define _rd-kafka-topic-conf-pointer/null (_cpointer/null 'rd-kafka-topic-conf))
 (define _rd-kafka-queue-pointer (_cpointer 'rd-kafka-queue))
 (define _rd-kafka-event-pointer (_cpointer/null 'rd-kafka-event))
 (define _rd-kafka-topic-result-pointer (_cpointer 'rd-kafka-topic-result))
@@ -71,7 +71,10 @@
 (define-rdkafka rd-kafka-get-debug-contexts (_fun -> _string))
 
 ;;; ERRORS
-(define-cstruct _rd-kafka-err-desc ([code _int] [name _string] [desc _string]))
+(define-cstruct _rd-kafka-err-desc
+  ([code _int]
+   [name _string]
+   [desc _string]))
 
 (define _rd-kafka-resp-err
   (let* ([get-err-descs
@@ -210,6 +213,9 @@
 (define-rdkafka rd-kafka-conf-destroy
   (_fun _rd-kafka-conf-pointer -> _void))
 
+(define-rdkafka rd-kafka-topic-conf-destroy
+  (_fun _rd-kafka-topic-conf-pointer -> _void))
+
 (define-rdkafka rd-kafka-conf-new
   (_fun -> _rd-kafka-conf-pointer))
 
@@ -241,7 +247,20 @@
 
 (define-rdkafka rd-kafka-conf-set
   (_fun _rd-kafka-conf-pointer _string _string
-        _bytes _size -> _rd-kafka-conf-res))
+        _bytes _size
+        -> _rd-kafka-conf-res))
+
+(define-rdkafka rd-kafka-conf-get
+  (_fun _rd-kafka-conf-pointer _string
+        _bytes _size
+        -> _rd-kafka-conf-res))
+
+(define-rdkafka rd-kafka-topic-conf-get ;; TODO use the same technique for errstr
+  (_fun _rd-kafka-topic-conf-pointer _string
+        [v : (_bytes o 256)]
+        [s : (_box _int) = (box 256)]
+        -> [res : _rd-kafka-conf-res]
+        -> (values res (bytes->string/latin-1 v #f 0 (unbox s)))))
 
 (define-rdkafka rd-kafka-conf-dup
   (_fun _rd-kafka-conf-pointer -> _rd-kafka-conf-pointer))
@@ -274,18 +293,6 @@
 (define-rdkafka rd-kafka-conf-set-stats-cb
   (_fun _rd-kafka-conf-pointer _stats-cb
         -> _void))
-
-;; FIXME this callback is not possible, as it is called from all kind of
-;; rdkafka threads while holding all kind of locks
-#;(define _log-cb
-    (_fun #:atomic? #t
-          #:async-apply (λ (f) (f))
-          _rd-kafka-pointer _int _string _string
-          -> _void))
-
-#;(define-rdkafka rd-kafka-conf-set-log-cb
-    (_fun _rd-kafka-conf-pointer _log-cb
-          -> _void))
 
 (define _background-event-cb
   (_fun #:atomic? #t
@@ -373,6 +380,9 @@
               (rd-kafka-conf-dump-free arr cnt)
               lst)))
 
+(define-rdkafka rd-kafka-topic-conf-new
+  (_fun -> _rd-kafka-topic-conf-pointer/null))
+
 (define-rdkafka rd-kafka-conf-get-default-topic-conf
   (_fun _rd-kafka-conf-pointer -> _rd-kafka-topic-conf-pointer))
 
@@ -388,6 +398,7 @@
   rd-kafka-conf-properties-show
   rd-kafka-get-debug-contexts
   rd-kafka-conf-set
+  rd-kafka-conf-get
   rd-kafka-conf-new
   rd-kafka-conf-dup
   rd-kafka-conf
@@ -403,8 +414,11 @@
   rd-kafka-conf-set-dr-msg-cb
   rd-kafka-conf-set-offset-commit-cb
   rd-kafka-conf-set-background-event-cb
+  rd-kafka-conf-get-default-topic-conf
   rd-kafka-topic-conf-dump
-  rd-kafka-conf-get-default-topic-conf)
+  rd-kafka-topic-conf-new
+  rd-kafka-topic-conf-get
+  rd-kafka-topic-conf-destroy)
 
 ;;; ---------------------------------
 ;;; @name Kafka and Topic main object
@@ -567,7 +581,9 @@
  rd-kafka-flush)
 
 (define-rdkafka rd-kafka-commit
-  (_fun _rd-kafka-pointer -> _rd-kafka-resp-err))
+  (_fun _rd-kafka-pointer
+        _rd-kafka-topic-partition-list-pointer
+        _int -> _rd-kafka-resp-err))
 
 ;;
 (define-rdkafka rd-kafka-topic-partition-list-destroy
