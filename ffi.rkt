@@ -90,7 +90,9 @@
                             (match (ptr-ref x (_list-struct _int _string _string) i)
                               [(list code name _)
                                #:when name
-                               (list (string->symbol (format "RD_KAFKA_RESP_ERR_~A" name)) '= code)]
+                               (list
+                                (string->symbol
+                                 (format "RD_KAFKA_RESP_ERR_~A" name)) '= code)]
                               [(list _ #f _) '()]))))
                (filter-not empty?))])
     (_enum err-codes _fixint)))
@@ -529,24 +531,27 @@
 (define (rd-kafka-producev producer . args)
   (define itypes
     (cons _pointer
-          (map (λ (x)
-                 (cond
-                   [(member x rd-kafka-vtypes) _rd-kafka-vtype]
-                   [(and (integer? x) (exact? x)) _int]
-                   [(and (number? x) (real? x)) _double*]
-                   [(string? x) _string]
-                   [(bytes? x) _bytes]
-                   [(symbol? x) _symbol] ;; TODO add types for all vtypes
-                   [else (error 'rd-kafka-producev "don't know how to deal with ~e" x)]))
-               args)))
-  (let ([producev (hash-ref producev-interfaces
-                            itypes
-                            (λ ()
-                              (let ([i (get-ffi-obj "rd_kafka_producev"
-                                                    rdkafka-lib
-                                                    (_cprocedure itypes _rd-kafka-resp-err))])
-                                (hash-set! producev-interfaces itypes i)
-                                i)))])
+          (map
+           (λ (x)
+             (cond
+               [(member x rd-kafka-vtypes) _rd-kafka-vtype]
+               [(and (integer? x) (exact? x)) _int]
+               [(and (number? x) (real? x)) _double*]
+               [(string? x) _string]
+               [(bytes? x) _bytes]
+               [(symbol? x) _symbol] ;; TODO add types for all vtypes
+               [else
+                (error 'rd-kafka-producev "don't know how to deal with ~e" x)]))
+           args)))
+  (let ([producev
+         (hash-ref
+          producev-interfaces
+          itypes
+          (λ ()
+            (let ([i (get-ffi-obj "rd_kafka_producev"
+                                  rdkafka-lib
+                                  (_cprocedure itypes _rd-kafka-resp-err))])
+              (hash-set! producev-interfaces itypes i) i)))])
     (apply producev (cons producer args))))
 
 (define-rdkafka rd-kafka-produce-batch

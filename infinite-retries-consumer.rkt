@@ -27,9 +27,11 @@
 (define (shutdown!)
   (async-channel-put signal-channel 'BOOM))
 
+(define paused #f)
+(define (paused?) paused)
+
 (define argument-vec
   (if (vector-empty? (current-command-line-arguments))
-      #;(vector "-A" "-q" "-X" "partition.assignment.strategy=cooperative-sticky" "-g" "xoxo13" "transactions")
       (vector)
       (current-command-line-arguments)))
 
@@ -72,7 +74,10 @@
 (define (parse-properties prop-strs result)
   (foldl
    (λ (str r)
-     (let ([l (~> str (string-normalize-spaces #px"\\s+" "") (string-trim) (string-split "="))])
+     (let ([l (~> str
+                  (string-normalize-spaces #px"\\s+" "")
+                  (string-trim)
+                  (string-split "="))])
        (cond
          [(equal? "dump" (car l)) (begin (dump-conf #t) r)]
          [(= 2 (length l)) (dict-set r (car l) (cadr l))]
@@ -90,8 +95,10 @@
 (define (format-topar-list partitions)
   (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
     (if (zero? partition-cnt) '()
-        (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
-               [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
+        (let* ([partition-elms
+                (rd-kafka-topic-partition-list-elems partitions)]
+               [partition-lst
+                (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
           (for/list ([p partition-lst])
             (format "~a [~a] offset ~a"
                     (rd-kafka-topic-partition-topic p)
@@ -107,40 +114,6 @@
                                  (if (p? hd)
                                      (k (cons hd ins) outs)
                                      (k ins (cons hd outs)))))]))
-
-;; TODO rewrite
-(define (rebalance-cb client err partitions _)
-  (display "% Consumer group rebalanced: ")
-  (let ([error #f]
-        [ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR])
-
-    (match err
-      ['RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS
-       (printf "Partition assigned (~a): ~s\n"
-               (rd-kafka-rebalance-protocol client)
-               (format-topar-list partitions))
-       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
-           (set! error (rd-kafka-incremental-assign client partitions))
-           (set! ret-err (rd-kafka-assign client partitions)))]
-
-      ['RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS
-       (printf "Partition revoked  (~a): ~s\n"
-               (rd-kafka-rebalance-protocol client)
-               (format-topar-list partitions))
-       (if (string=? (rd-kafka-rebalance-protocol client) "COOPERATIVE")
-           (set! error (rd-kafka-incremental-unassign client partitions))
-           (set! ret-err (rd-kafka-assign client #f)))]
-
-      [_ (displayln "failed: ~a" (rd-kafka-err2str err))
-         (rd-kafka-assign client #f)])
-
-    (when error ;; error object
-      (eprintf "% incremental assign failure: ~a\n" (rd-kafka-error-string error))
-      (rd-kafka-error-destroy error))
-
-    (unless (equal? ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR) ;; versus enum
-      (eprintf "% assign failure: ~a\n" (rd-kafka-err2str ret-err)))))
-
 (define (rebalance/cb client err partitions _)
   (let ([error #f]
         [ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR])
@@ -177,8 +150,10 @@
     (for ([topic lst])
       (let* ([seq (string-split topic ":")]
              [partition  (match (length seq)
-                           [2 (string->number (cadr seq))]
-                           [1 -1] [_ (raise (format "invalid topic list: " lst))])])
+                           [2
+                            (string->number (cadr seq))]
+                           [1 -1]
+                           [_ (raise (format "invalid topic list: " lst))])])
         (rd-kafka-topic-partition-list-add topics (car seq) partition)))
     topics))
 
@@ -190,8 +165,9 @@
            [topic-name (rd-kafka-topic-name topic)]
            [offset (rd-kafka-message-offset msg)]
            [p (rd-kafka-message-partition msg)])
-      (printf "Simulating a ~a ms call to an external system for message ~a[~a]/~a\n"
-              duration topic-name p offset)
+      (printf
+       "Simulating a ~a ms call to an external system for message ~a[~a]/~a\n"
+       duration topic-name p offset)
       (sleep duration)
       (when (< (random 100) (error-rate))
         (raise "💥 Call to external system failed! 💀")))))
@@ -217,8 +193,10 @@
    ["-X" property
          "Set arbitrary librdkafka configuration property (name=value)."
          (properties (cons property (properties)))]
-   #:usage-help "For balanced consumer groups use the 'topic1 topic2..' format"
-   #:usage-help "and for static assignment use 'topic1:part1 topic1:part2 topic2:part1..'"
+   #:usage-help
+   "For balanced consumer groups use the 'topic1 topic2..' format"
+   #:usage-help
+   "and for static assignment use 'topic1:part1 topic1:part2 topic2:part1..'"
    #:args (topic)
    (list topic)))
 
@@ -251,25 +229,37 @@
 
 (define auto.offset.reset #f)
 
-(define saved-offsets (make-hash))
+(define (consumer/pause client partitions)
+  (unless (paused?)
+    (rd-kafka-pause-partitions client partitions)
+    (set! paused #t)))
 
-(define (consumer/rewind client)
+(define (consumer/resume client partitions)
+  (when (paused?)
+    (rd-kafka-resume-partitions client partitions)
+    (set! paused #f)))
+
+(define (consumer/rewind client partitions)
   (unless auto.offset.reset
     (let ([topic-conf (rd-kafka-topic-conf-new)])
-      (let-values ([(res val) (rd-kafka-topic-conf-get topic-conf "auto.offset.reset")])
+      (let-values ([(res val)
+                    (rd-kafka-topic-conf-get topic-conf "auto.offset.reset")])
         (set! auto.offset.reset val)
         (rd-kafka-topic-conf-destroy topic-conf))))
 
-  (if (hash-empty? saved-offsets)
-      (let* ([partitions (rd-kafka-assignment client)]
-             [partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
-        (unless (zero? partition-cnt)
-          (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
-                 [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition partition-cnt)])
-            (for/list ([p partition-lst])
-              (set-rd-kafka-topic-partition-offset! p RD_KAFKA_OFFSET_END)))))
-      (void)
-      ))
+
+  (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
+    (unless (zero? partition-cnt)
+      (rd-kafka-committed client partitions 5000) ;; see what's committed
+      (let* ([partition-elms (rd-kafka-topic-partition-list-elems partitions)]
+             [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition
+                                          partition-cnt)])
+
+        (for ([p partition-lst])
+          (when (equal? (rd-kafka-topic-partition-offset p) RD_KAFKA_OFFSET_INVALID )
+            (if (string=? auto.offset.reset "largest")
+                (set-rd-kafka-topic-partition-offset! p RD_KAFKA_OFFSET_END)
+                (set-rd-kafka-topic-partition-offset! p RD_KAFKA_OFFSET_BEGINNING))))))))
 
 (try
  (let* ([errstr-len 256]
@@ -279,15 +269,17 @@
                     (dict-set "enable.partition.eof" "true")
                     ;(dict-set "max.poll.interval.ms" "10000") ;; nope
                     (dict-set "bootstrap.servers" (brokers))
-                    (dict-set "internal.termination.signal" (format "~a" (lookup-signal-number 'SIGIO)))
+                    (dict-set "internal.termination.signal"
+                              (format "~a" (lookup-signal-number 'SIGIO)))
                     (dict-set "group.id" (or (group-id) "infinite-retries-consumer")))]
         [table (if (null? (debug-flags))
                    table
-                   (dict-set table "debug" (foldl string-append "" (add-between (debug-flags) ","))))]
+                   (dict-set table "debug"
+                             (foldl string-append "" (add-between (debug-flags) ","))))]
         [table (parse-properties (properties) table)]
         [conf (make-conf table errstr errstr-len)]
         [log-queue null] [log-thread null]
-        [_ (rd-kafka-conf-set-rebalance-cb conf rebalance-cb)]
+        [_ (rd-kafka-conf-set-rebalance-cb conf rebalance/cb)]
         [client (make-consumer conf errstr errstr-len)])
 
    (let* ([topics (make-partition-list topic-list)])
@@ -305,12 +297,28 @@
 
      (let loop ([msgs (consume/batch client 1000)])
        (unless (empty? msgs)
-         (try
-          (map message-consume (reverse msgs))
-          (catch (string? e)
-            (eprintf "~a\n" e)))
+
+         (let-values ([(err partitions) (rd-kafka-assignment client)]
+                      [(now) (current-inexact-milliseconds)])
+
+           (consumer/resume client partitions) ;; always call
+
+           (unless (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
+             (raise (format "couldn't fetch assignments: ~a" err)))
+
+           (try
+
+            (map message-consume (reverse msgs))
+
+            (catch (string? e)
+              (eprintf "~a\n" e)
+              (consumer/pause client partitions)
+              (consumer/rewind client partitions))
+
+            (finally (rd-kafka-topic-partition-list-destroy partitions))))
+
          (map rd-kafka-message-destroy msgs))
-       (consumer/rewind client)
+
        (when (running?)
          (loop (consume/batch client 1000))))
 
