@@ -201,10 +201,12 @@
    (list topic)))
 
 (define (consume/batch client timeout [batch-size 10])
+  ; (printf "XXX batch 1 to=~a\n" timeout)
   (let pool ([batch '()] [left-timeout timeout])
     (let* ([t1 (current-milliseconds)]
            [msg (rd-kafka-consumer-poll client left-timeout)]
            [left-timeout* (- left-timeout (- (current-milliseconds) t1))])
+      ;     (printf "XXX batch 2 msg=~a\n" msg)
       (if (not msg)
           batch
           (let ([err (rd-kafka-message-err msg)])
@@ -231,11 +233,13 @@
 
 (define (consumer/pause client partitions)
   (unless (paused?)
+    ;    (displayln "----->>> XXX PAUSING")
     (rd-kafka-pause-partitions client partitions)
     (set! paused #t)))
 
 (define (consumer/resume client partitions)
   (when (paused?)
+    ;    (displayln "---->>> XXX RESUMING")
     (rd-kafka-resume-partitions client partitions)
     (set! paused #f)))
 
@@ -296,29 +300,33 @@
        [(err _) (eprintf "ERROR ~a\n" (rd-kafka-err2str err))])
 
      (let loop ([msgs (consume/batch client 1000)])
-       (unless (empty? msgs)
 
-         (let-values ([(err partitions) (rd-kafka-assignment client)]
-                      [(now) (current-inexact-milliseconds)])
+       (let-values ([(err partitions) (rd-kafka-assignment client)]
+                    [(now) (current-inexact-milliseconds)])
 
-           (consumer/resume client partitions) ;; always call
+         (consumer/resume client partitions) ;; always call
 
-           (unless (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
-             (raise (format "couldn't fetch assignments: ~a" err)))
+         (unless (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
+           (raise (format "couldn't fetch assignments: ~a" err)))
 
-           (try
+         (try
 
-            (map message-consume (reverse msgs))
+          (map message-consume (reverse msgs))
 
-            (catch (string? e)
-              (eprintf "~a\n" e)
-              (consumer/pause client partitions)
-              (consumer/rewind client partitions))
+          (catch (string? e)
+            (eprintf "~a\n" e)
+            (consumer/pause client partitions)
+            ; (eprintf "consumer paused\n")
+            (consumer/rewind client partitions)
+            ;(eprintf "consumer rewinded\n")
+            )
 
-            (finally (rd-kafka-topic-partition-list-destroy partitions))))
+          (finally (rd-kafka-topic-partition-list-destroy partitions)))
 
-         (map rd-kafka-message-destroy msgs))
-
+         (unless (or (empty? msgs) (paused?))
+           (let ([err (rd-kafka-commit client partitions 0)])
+             (raise (format  "% failed to commit: ~a" (rd-kafka-err2str err))))))
+       (map rd-kafka-message-destroy msgs)
        (when (running?)
          (loop (consume/batch client 1000))))
 
