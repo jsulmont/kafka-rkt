@@ -192,7 +192,7 @@
    #:once-each ["-g" g "Consumer group. ((null))" (group-id g)]
    ["-v" "Be verbose." (verbose #t)]
    ["-b" b "Broker address. (localhost:9092)" (brokers b)]
-   ["-e" e "Error rate %. (10%)" (error-rate e)]
+   ["-e" e "Error rate %. (10%)" (error-rate (string->number e))]
    #:multi
    ["-X" property
          "Set arbitrary librdkafka configuration property (name=value)."
@@ -233,29 +233,29 @@
                      (shutdown!))))]))))))
 
 
-(define auto.offset.reset #f)
+
+(define auto.offset.reset
+  (let ([topic-conf (rd-kafka-topic-conf-new)])
+    (let-values ([(res val)
+                  (rd-kafka-topic-conf-get topic-conf "auto.offset.reset")])
+      (rd-kafka-topic-conf-destroy topic-conf)
+      val)))
 
 (define (consumer/pause client partitions)
   (unless (paused?)
-    ;    (displayln "----->>> XXX PAUSING")
+    (displayln "----->>> XXX PAUSING")
     (rd-kafka-pause-partitions client partitions)
     (set! paused #t)))
 
 (define (consumer/resume client partitions)
   (when (paused?)
-    ;    (displayln "---->>> XXX RESUMING")
+    (displayln "---->>> XXX RESUMING")
     (rd-kafka-resume-partitions client partitions)
     (set! paused #f)))
 
+
 (define (consumer/rewind client partitions)
-  (unless auto.offset.reset
-    (let ([topic-conf (rd-kafka-topic-conf-new)])
-      (let-values ([(res val)
-                    (rd-kafka-topic-conf-get topic-conf "auto.offset.reset")])
-        (set! auto.offset.reset val)
-        (rd-kafka-topic-conf-destroy topic-conf))))
-
-
+  (printf "---> REWIND BEFORE ~a\n" (format-topar-list partitions))
   (let ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)])
     (unless (zero? partition-cnt)
       (rd-kafka-committed client partitions 5000) ;; see what's committed
@@ -267,9 +267,24 @@
           (when (equal? (rd-kafka-topic-partition-offset p) RD_KAFKA_OFFSET_INVALID )
             (if (string=? auto.offset.reset "largest")
                 (set-rd-kafka-topic-partition-offset! p RD_KAFKA_OFFSET_END)
-                (set-rd-kafka-topic-partition-offset! p RD_KAFKA_OFFSET_BEGINNING))))))))
+                (set-rd-kafka-topic-partition-offset! p RD_KAFKA_OFFSET_BEGINNING)))))))
+  (printf "---> REWIND AFTER ~a\n" (format-topar-list partitions))
+  (let ([err (rd-kafka-seek-partitions client partitions 5000)])
+    (when err
+      (let ([errstr (rd-kafka-error-string err)])
+        (rd-kafka-error-destroy err)
+        (raise errstr)))))
 
-(define committed-offsets (make-hash))
+(define (table->topar-list table)
+  (let* ([topar-list (rd-kafka-topic-partition-list-new (hash-count table))])
+    (for ([entry (hash->list table)])
+      (match entry
+        [(cons (cons topic part) offset)
+         (begin
+           (rd-kafka-topic-partition-list-add topar-list topic part)
+           (rd-kafka-topic-partition-list-set-offset topar-list topic part offset))]))
+    #;(printf "---> CREATED COMMIT LIST=~a\n" (format-topar-list topar-list))
+    topar-list))
 
 (try
  (let* ([errstr-len 256]
@@ -277,6 +292,7 @@
         [table  (~> #hash()
                     (dict-set "log.queue" "true")
                     (dict-set "enable.partition.eof" "true")
+                    (dict-set "enable.auto.commit" "false")
                     ;(dict-set "max.poll.interval.ms" "10000") ;; nope
                     (dict-set "bootstrap.servers" (brokers))
                     (dict-set "internal.termination.signal"
@@ -310,43 +326,41 @@
        (let-values ([(err partitions) (rd-kafka-assignment client)]
                     [(now) (current-inexact-milliseconds)])
 
-         (consumer/resume client partitions) ;; always call
 
          (unless (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
            (raise (format "couldn't fetch assignments: ~a" err)))
 
-         (try
-          (map message-consume (reverse msgs))
-          ;; offsets to be committed:
-          (for ([msg msgs])
-            (let-values ([(topic p offset) (message->topar-offset msg)])
-              (hash-set! committed-offsets (cons topic p) offset)))
+         (consumer/resume client partitions) ;; always call
 
+         (try
+
+          (map message-consume (reverse msgs))
+
+          ;; we're good.
+          (unless (empty? msgs)
+            ;; let's figure offsets to be committed.
+            (let* ([new-commits (make-hash)]
+                   [f (λ (msg)
+                        (let-values ([(topic p offset) (message->topar-offset msg)])
+                          (let ([ref (hash-ref new-commits (cons topic p)
+                                               (λ () RD_KAFKA_OFFSET_END))])
+                            (when (>= offset ref)
+                              (hash-set! new-commits (cons topic p) (add1 offset))))))]
+                   [_ (map f msgs)]
+                   [commit-list (table->topar-list new-commits)])
+              ;; ... and commit.
+              (let ([err (rd-kafka-commit client commit-list 0)])
+                (unless (equal? err 'RD_KAFKA_RESP_ERR_NO_ERROR)
+                  (raise (format  "% failed to commit: ~a" (rd-kafka-err2str err)))))
+              (rd-kafka-topic-partition-list-destroy commit-list)))
           (catch (string? e)
             (eprintf "~a\n" e)
             (consumer/pause client partitions)
             (consumer/rewind client partitions))
-
-          (finally (rd-kafka-topic-partition-list-destroy partitions)))
-
-         (unless (or (empty? msgs) (paused?))
-           (let* ([partition-cnt (rd-kafka-topic-partition-list-cnt partitions)]
-                  [partition-elms (rd-kafka-topic-partition-list-elems partitions)]
-                  [partition-lst (cblock->list partition-elms _rd-kafka-topic-partition
-                                               partition-cnt)])
-             (printf "--> COMMITTED = ~a\n" committed-offsets)
-             (for ([p partition-lst])
-               (let* ([topic (rd-kafka-topic-partition-topic p)]
-                      [partition (rd-kafka-topic-partition-partition p)]
-                      [last-committed-offset (hash-ref committed-offsets (cons topic partition))])
-                 (set-rd-kafka-topic-partition-offset! p last-committed-offset))))
-           (printf "committing: ~a\n" (format-topar-list partitions))
-           (let ([err (rd-kafka-commit client partitions 0)])
-             (raise (format  "% failed to commit: ~a" (rd-kafka-err2str err))))))
+          (finally (rd-kafka-topic-partition-list-destroy partitions))))
        (map rd-kafka-message-destroy msgs)
        (when (running?)
          (loop (consume/batch client 1000))))
-
 
      (displayln "% Shutting down")
 
