@@ -114,6 +114,7 @@
                                  (if (p? hd)
                                      (k (cons hd ins) outs)
                                      (k ins (cons hd outs)))))]))
+
 (define (rebalance/cb client err partitions _)
   (let ([error #f]
         [ret-err 'RD_KAFKA_RESP_ERR_NO_ERROR])
@@ -168,7 +169,7 @@
 (define (external-system msg)
   (unless (ptr-equal? msg #f)
     (let-values ([(duration) (/ (random 1000) 1000.0)]
-                 [(topic-name offset p) (message->topar-offset msg)])
+                 [(topic-name p offset) (message->topar-offset msg)])
       (printf
        "Simulating a ~a ms call to an external system for message ~a[~a]/~a\n"
        duration topic-name p offset)
@@ -230,7 +231,8 @@
                        batch)
                    (begin
                      (eprintf "% Consumer error: ~a\n" (rd-kafka-err2str err))
-                     (shutdown!))))]))))))
+                     (shutdown!)
+                     null)))]))))))
 
 
 
