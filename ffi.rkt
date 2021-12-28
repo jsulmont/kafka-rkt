@@ -598,7 +598,7 @@
 
 (define-rdkafka rd-kafka-commit
   (_fun _rd-kafka-pointer
-        _rd-kafka-topic-partition-list-pointer
+        _rd-kafka-topic-partition-list-pointer/null
         _int -> _rd-kafka-resp-err))
 
 ;;
@@ -796,10 +796,20 @@
  rd-kafka-queue-poll
  rd-kafka-set-log-queue)
 
+
+;;; ---------------------------------
+;;; @name Simple Consumer API (legacy)
+;;; ---------------------------------
+(define-rdkafka rd-kafka-seek-partitions
+  (_fun _rd-kafka-pointer
+        _rd-kafka-topic-partition-list-pointer _int
+        -> _rd-kafka-error-pointer/null))
+
+(provide rd-kafka-seek-partitions)
+
 ;;; ---------------------------------
 ;;; @name Metadata API
 ;;; ---------------------------------
-
 (define-cstruct _rd-kafka-metadata-broker
   ([id _int32]
    [host _string]
