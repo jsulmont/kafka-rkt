@@ -1,18 +1,51 @@
 A Racket interface to Apache Kafka
 =======
 
+# Motivation
+
+* Lisp is totally cool and so is [Apache Kafka](https://kafka.apache.org/). Why not both? 
+* [Racket](https://racket-lang.org/) is missing a package to access Apache Kafka.
+  * [Clojurians](https://clojure.org/) have [jackdaw](https://github.com/FundingCircle/jackdaw), which leverages official Apache Kafka libraries.
+  * [Common Lispers](https://en.wikipedia.org/wiki/Common_Lisp) have [cl-rdkafka](https://github.com/SahilKang/cl-rdkafka)
+
+
 # Disclaimer
 This project is a work in progress. Not to be used, or at your own risk.
 
-# TL;DR
+# tl;dr
 
 * A [Racket](https://racket-lang.org/) library to access[ Apache Kafka](https://kafka.apache.org/), using [librdkafka](https://github.com/edenhill/librdkafka).
-* For now, just a low level access is provided (closely mapping the [C API of librdkafka](https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafka_8h.html)).
-* Next step will be a Racket idiomatic library, perhaps inspired by the excellent [jackdaw](https://github.com/FundingCircle/jackdaw).
-* Consider a R7RS low level library and see how it plays with [Gambit Scheme](https://github.com/gambit/gambit) (transpiling from Scheme to C).
-* Finally explore coding directly against [Kafka protocol](https://kafka.apache.org/protocol) (i.e., no `librdkafka`).
+   * For now, just a low level access is provided (closely mapping the [C API of librdkafka](https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafka_8h.html)). 
+* A couple of examples, coverering 80% to 90% of `librdkafka`, almost a 1-1 mapping to their C counterpart. 
+   * [infinite-retries-consumer.rkt](https://github.com/jsulmont/rkt-kafka/blob/main/infinite-retries-consumer.rkt) is a port of [retrieable-consumer](https://github.com/jsulmont/rkt-kafka/blob/main/infinite-retries-consumer.rkt).
 
-## How to run
+* Next step will be a Racket idiomatic library, perhaps inspired by [jackdaw](https://github.com/FundingCircle/jackdaw) or [cl-kafka](https://github.com/SahilKang/cl-rdkafka).
+
+## Caveat
+
+* It is currently **not possible** to set a `log` callback as doing so will cause a deadlock. `librdkafka` is heavily treaded and the log callback is called from all threads, often holding locks.  
+	* hence `rd_kafka_conf_set_log_cb` is simply not exposed.
+	* the workaround, is route all logging to a dedicated queue using `rd_kafka_set_log_queue` and set a thread to [periodically poll that queue](https://github.com/jsulmont/rdkafka/blob/main/complex-consumer.rkt#L300-L317).
+* It is currently not possible to run a stand-alone executable (created with `raco exe`). This is due to a problem with the [unix signals](https://github.com/tonyg/racket-unix-signals) library.
+
+	
+
+
+### Missing 
+
+- [ ] Threading model (e.g., lift `librdkafka` to its own [place](https://docs.racket-lang.org/reference/places.html).
+- [ ] Memory management (from malloc/free to GC, when to copy and when not etc).
+- [ ] Exceptions 
+- [ ] Basics (Toppar, Serde, Message)
+- [ ] Admin API
+- [ ] Producer API
+- [ ] Consumer API
+- [ ] Tests for above APIs
+- [ ] Fix [unix signals](https://github.com/tonyg/racket-unix-signals) library.
+- [ ] CI
+
+
+## How to run the examples (will change)
 * Assuming [you have Racket on your machine](https://download.racket-lang.org/), and have installed the following Racket packages:
 
 ```Shell
@@ -89,28 +122,3 @@ usage: complex-consumer [ <option> ... ] <topic> [<topics>] ...
  one `-`. For example, `-h-` is the same as `-h --`.
 ```
 
-## Caveat
-
-* It is currently **not possible** to set a `log` callback as doing so will cause a deadlock. `librdkafka` is heavily treaded and the log callback is called from all threads, often holding locks.  
-	* hence `rd_kafka_conf_set_log_cb` is simply not exposed.
-	* the workaround, is route all logging to a dedicated queue using `rd_kafka_set_log_queue` and set a thread to [periodically poll that queue](https://github.com/jsulmont/rdkafka/blob/main/complex-consumer.rkt#L300-L317).
-* Ideally `librdkafka` library should be lifted to its own system thread (aka [place](https://docs.racket-lang.org/reference/places.html) in Racket parlance) and run under a dedicated [custodian](https://docs.racket-lang.org/reference/eval-model.html#%28part._custodian-model%29). Now I know, and this will probably happen at some time.
-* It is currently not possible to run a stand-alone executable (created with `raco exe`). This is due to a problem with the [unix signals](https://github.com/tonyg/racket-unix-signals) library.
-
-	
-# Background
-
-Lisp is totally cool and so is Kafka. Why not both?
-
-## Learn Kafka Protocol
-
-* Kafka uses a [wire protocol](https://kafka.apache.org/protocol) (binary/TCP) and defines all APIs as  sequences of requests/responses pairs. In other words, the only way to communicate with a Kafka broker, is to "speak" the protocol. Of course considering the complexity of problems solved by Kafka, this protocol isn't the simplest. Fortunately Apache Kafka releases official libraries as reference implementation of the Kafka Protocol (e.g., [kafka-clients](https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients))
- 
-	
-	* Clojurians using Kafka probably all know the excellent [jackdaw](https://github.com/FundingCircle/jackdaw), which amongst others leverages `kafka-clients`: [Clojure](https://clojure.org/) is yet another JVM language, and likewise all others (Scala, Kotlin, Groovy and ofc Java) can tap into the largest ecosystem ever. And of course since Clojure [*Clojure is a Lisp*](https://clojure.org/about/lisp) using Clojure/Jackdaw is indeed a very good way to do Kafka work -- that of course, if running JVMs is something you are happy with.
-
-	* For sure the JVM is probably the most optimized and tested piece of software on earth, simply a wonder of technology. Yet the way it uses resources makes it unfit for a certain type of applications -- those for which resources are scarced and for whom small is beautiful.
-
-	* Fortuanetly there is also [librdkafka](https://github.com/edenhill/librdkafka) which is a C implementation of Kafka Protocol: a library that C/C++ code that needs to interact with Kafka link against. On my MacOSX Intel running the Complex consumer example merely takes 2.2MB of RSS versus 212MB for a `kafka-console-consumer`.
-
-# Motivation
