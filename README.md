@@ -25,7 +25,7 @@ This project is a work in progress. Not to be used, or at your own risk.
 
 * It is currently **not possible** to set a `log` callback as doing so will cause a deadlock. `librdkafka` is heavily treaded and the log callback is called from all threads, often holding locks.  
 	* hence `rd_kafka_conf_set_log_cb` is simply not exposed.
-	* the workaround, is route all logging to a dedicated queue using `rd_kafka_set_log_queue` and set a thread to [periodically poll that queue](https://github.com/jsulmont/rdkafka/blob/main/complex-consumer.rkt#L300-L317).
+	* Untill I have figured out a concurrency/parallelism model (see [Missing](#missing)) the workaround, is route all logging to a dedicated queue using `rd_kafka_set_log_queue` and set a thread to [periodically poll that queue](https://github.com/jsulmont/rdkafka/blob/main/complex-consumer.rkt#L300-L317).
 * It is currently not possible to run a stand-alone executable (created with `raco exe`). This is due to a problem with the [unix signals](https://github.com/tonyg/racket-unix-signals) library.
 
 	
@@ -33,7 +33,7 @@ This project is a work in progress. Not to be used, or at your own risk.
 
 ### Missing 
 
-- [ ] Threading model (e.g., lift `librdkafka` to its own [place](https://docs.racket-lang.org/reference/places.html).
+- [ ] Concurrency/Parallelism  (e.g., lift `librdkafka` to its own [place](https://docs.racket-lang.org/reference/places.html)).
 - [ ] Memory management (from malloc/free to GC, when to copy and when not etc).
 - [ ] Exceptions 
 - [ ] Basics (Toppar, Serde, Message)
