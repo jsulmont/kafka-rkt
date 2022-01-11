@@ -1,5 +1,6 @@
 #lang info
 (define collection "kafka")
+(define package "kafka")
 (define deps '("base"))
 (define build-deps '("scribble-lib" "racket-doc" "rackunit-lib"))
 (define scribblings '(("scribblings/kafka.scrbl" ())))

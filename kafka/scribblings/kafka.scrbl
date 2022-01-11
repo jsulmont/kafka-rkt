@@ -1,10 +1,10 @@
 #lang scribble/manual
-@require[@for-label[rdkafka
+@require[@for-label[kafka
                     racket/base]]
 
-@title{rdkafka}
+@title{kafka}
 @author{jsulmont}
 
-@defmodule[rdkafka]
+@defmodule[kafka]
 
 Package Description Here

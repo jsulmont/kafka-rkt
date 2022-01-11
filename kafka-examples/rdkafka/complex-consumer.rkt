@@ -5,9 +5,7 @@
          ffi/unsafe
          try-catch-finally
          unix-signals
-         kafka/rdkafka-ffi
-         ;"ffi.rkt"
-         )
+         kafka/rdkafka-ffi)
 
 (void (capture-signal! 'SIGINT))
 
