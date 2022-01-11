@@ -1,7 +1,7 @@
-__ignored__ := $(shell ./setup.sh)
+#__ignored__ := $(shell ./setup.sh)
 
-PACKAGES=syndicate syndicate-examples
-COLLECTS=syndicate syndicate-examples
+PACKAGES=kafka kafka-examples
+COLLECTS=kafka kafka-examples
 
 all: setup
 
