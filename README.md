@@ -31,10 +31,11 @@ This project is a work in progress. Not to be used, or at your own risk.
 	
 
 
-### Missing 
+### Missing/TODO
 
 - [ ] Concurrency/Parallelism  (e.g., lift `librdkafka` to its own [place](https://docs.racket-lang.org/reference/places.html)).
 - [ ] Memory management (from malloc/free to GC, when to copy and when not etc).
+- [ ] Figure out log format and [statistics/metrics](https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md).
 - [ ] Exceptions 
 - [ ] Basics (Toppar, Serde, Message)
 - [ ] Admin API
